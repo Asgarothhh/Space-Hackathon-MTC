@@ -23,13 +23,15 @@ with engine.begin() as conn:
     for schema in SCHEMAS:
         conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema}"))
 
-# теперь создаём таблицы в уже существующих схемах
 Base.metadata.create_all(bind=engine)
 
+with engine.begin() as conn:
+    conn.execute(text(
+        "ALTER TABLE project_service.projects "
+        "ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active'"
+    ))
 
 app = FastAPI(title="MTS IaaS Cloud")
-
-Base.metadata.create_all(bind=engine)
 
 
 app.include_router(vm_router)

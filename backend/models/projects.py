@@ -3,6 +3,7 @@ from sqlalchemy import Column, String, Integer, TIMESTAMP, ForeignKey, text
 from sqlalchemy.dialects.postgresql import UUID
 from .db import Base
 
+
 class Project(Base):
     __tablename__ = "projects"
     __table_args__ = {"schema": "project_service"}
@@ -13,4 +14,5 @@ class Project(Base):
     cpu_quota = Column(Integer, nullable=False, default=8)
     ram_quota = Column(Integer, nullable=False, default=16384)
     ssd_quota = Column(Integer, nullable=False, default=100)
+    status = Column(String(20), nullable=False, server_default=text("'active'"))
     created_at = Column(TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"))
