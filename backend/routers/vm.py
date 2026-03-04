@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 from typing import Optional
 
+from backend.models.compute import VirtualMachine
 from backend.routers.dependencies import get_db, get_current_user
 from backend.schemas.user import (
     UserServerCreate,
@@ -19,7 +20,7 @@ from backend.services.vm import (
     delete_server,
     disable_server,
     rename_server as svc_rename_server,
-    start_server,
+    start_server, create_ssh_link_for_vm,
 )
 
 router = APIRouter(prefix="/vm", tags=["vm"])
@@ -114,3 +115,27 @@ def delete_server_by_body(payload: dict, db: Session = Depends(get_db), current_
     if not ok:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="VM not found or access denied")
     return None
+
+
+@router.post("/{server_id}/ssh", response_model=UserServerBase)
+def create_vm_ssh_endpoint(server_id: str, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+    """
+    Пользователь запрашивает генерацию SSH для своей VM.
+    Возвращает обновлённую VM (если ssh_link доступен) или 202/409 в зависимости от состояния.
+    """
+    try:
+        vm_uuid = UUID(server_id)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid server_id format")
+
+    job = create_ssh_link_for_vm(db, owner_id=current_user.id, server_id=vm_uuid)
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="VM not found or access denied")
+
+    # Попытаемся вернуть обновлённую VM (если ssh_link уже записан)
+    vm = db.query(VirtualMachine).filter(VirtualMachine.id == vm_uuid).first()
+    if vm and vm.ssh_link:
+        return UserServerBase.from_orm(vm)
+
+    # Если ssh ещё не готов — вернуть 202 с текущим состоянием VM (без ssh)
+    raise HTTPException(status_code=status.HTTP_202_ACCEPTED, detail=f"SSH creation enqueued (job_id={job.id})")
