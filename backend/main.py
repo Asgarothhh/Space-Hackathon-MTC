@@ -9,6 +9,7 @@ from backend.routers import user as user_router
 from backend.routers import projects as projects_router
 from sqlalchemy import text
 from backend.models.db import engine, Base
+from backend.routers.vm import router as vm_router
 
 SCHEMAS = [
     "auth_service",
@@ -30,6 +31,8 @@ app = FastAPI(title="MTS IaaS Cloud")
 
 Base.metadata.create_all(bind=engine)
 
+
+app.include_router(vm_router)
 app.include_router(admin_router.router)
 app.include_router(user_router.router)
 app.include_router(projects_router.router)
