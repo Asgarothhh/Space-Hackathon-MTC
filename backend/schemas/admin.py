@@ -1,71 +1,58 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
+
+from backend.schemas.auth import UserResponse
+from backend.schemas.project import ProjectResponse
+from backend.schemas.user import UserServerBase, UserServerCreate
 
 
-class AdminUserInfo(BaseModel):
-    id: UUID
-    email: EmailStr
-    role: str
-    is_active: bool
+# ── User ─────────────────────────────────────────────────────────────
+
+class AdminUserInfo(UserResponse):
     created_at: datetime
 
-    class Config:
-        from_attributes = True
 
+# ── Project ──────────────────────────────────────────────────────────
 
-class AdminSoftDeleteUserResponse(BaseModel):
-    id: UUID
-    is_active: bool
-
-
-class AdminServerInfo(BaseModel):
-    """'Server' in admin context = Project + list of VM ids."""
-    id: UUID
+class AdminProjectCreateRequest(BaseModel):
     name: str
-    owner_id: UUID
-    cpu_quota: int
-    ram_quota: int
-    ssd_quota: int
-    status: str
-    created_at: datetime
-    server_ids: list[UUID] = []
-
-    class Config:
-        from_attributes = True
-
-
-class AdminServerCreate(BaseModel):
-    name: str
-    owner_id: UUID
     cpu_quota: int = 8
     ram_quota: int = 16384
     ssd_quota: int = 100
 
 
-class AdminServerStatusChange(BaseModel):
-    server_id: UUID
-
-
-class AdminServerCreatedResponse(BaseModel):
-    id: UUID
-    name: str
+class AdminProjectResponse(ProjectResponse):
     status: str
+    created_at: datetime
 
 
-class AdminServerLoad(BaseModel):
-    cpu_usage_percent: float
-    ram_usage_percent: float
-    ssd_usage_percent: float
-    network_in_mbps: float
-    network_out_mbps: float
+# ── Server (VM) ──────────────────────────────────────────────────────
 
-
-class AdminServerInfoWithLoad(AdminServerInfo):
-    load: AdminServerLoad
-
-
-class AdminDisabledServerSearchResult(AdminServerInfo):
+class AdminVMCreateRequest(UserServerCreate):
     pass
+
+
+class AdminVMResponse(UserServerBase):
+    created_at: datetime
+
+
+class AdminVMInfoResponse(AdminVMResponse):
+    """Расширенный ответ с нагрузкой (заглушка)."""
+    cpu_usage_percent: float = 0.0
+    ram_usage_percent: float = 0.0
+    ssd_usage_percent: float = 0.0
+    network_in_bytes: int = 0
+    network_out_bytes: int = 0
+
+
+# ── List wrappers ────────────────────────────────────────────────────
+
+class AdminServersListResponse(BaseModel):
+    servers: List[AdminVMResponse]
+
+
+class AdminProjectsListResponse(BaseModel):
+    projects: List[AdminProjectResponse]

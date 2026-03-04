@@ -6,19 +6,18 @@ from sqlalchemy.orm import Session
 from backend.models.db import SessionLocal
 from backend.schemas.admin import (
     AdminUserInfo,
-    AdminSoftDeleteUserResponse,
-    AdminServerInfo,
-    AdminServerInfoWithLoad,
-    AdminServerLoad,
-    AdminServerCreate,
-    AdminServerStatusChange,
-    AdminServerCreatedResponse,
-    AdminDisabledServerSearchResult,
+    AdminProjectCreateRequest,
+    AdminProjectResponse,
+    AdminVMCreateRequest,
+    AdminVMResponse,
+    AdminVMInfoResponse,
+    AdminServersListResponse,
+    AdminProjectsListResponse,
 )
 from backend.services import admin as admin_service
 
 
-router = APIRouter(prefix="", tags=["admin"])
+router = APIRouter(tags=["admin"])
 
 
 def get_db():
@@ -29,98 +28,280 @@ def get_db():
         db.close()
 
 
-# ── User endpoints ──────────────────────────────────────────────────
+# ── Project admin endpoints ──────────────────────────────────────────
 
-@router.get("/search/admin/user/{user_id}", response_model=AdminUserInfo)
-def search_user(user_id: UUID, db: Session = Depends(get_db)):
+@router.post(
+    "/project/admin/add/{user_id}",
+    response_model=AdminProjectResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def admin_add_project(
+    user_id: UUID,
+    payload: AdminProjectCreateRequest,
+    db: Session = Depends(get_db),
+):
     user = admin_service.get_user_by_id(db, user_id=user_id)
     if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    return user
-
-
-@router.get("/user/{user_id}/admin/info", response_model=AdminUserInfo)
-def user_info(user_id: UUID, db: Session = Depends(get_db)):
-    user = admin_service.get_user_by_id(db, user_id=user_id)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    return user
-
-
-@router.delete("/delete/admin/user/{user_id}", response_model=AdminSoftDeleteUserResponse)
-def delete_user(user_id: UUID, db: Session = Depends(get_db)):
-    user = admin_service.soft_delete_user(db, user_id=user_id)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    return AdminSoftDeleteUserResponse(id=user.id, is_active=user.is_active)
-
-
-# ── Server (= Project) endpoints ───────────────────────────────────
-
-@router.get("/servers/admin/user/{user_id}", response_model=list[AdminServerInfo])
-def get_user_servers(user_id: UUID, db: Session = Depends(get_db)):
-    return admin_service.get_servers_for_user(db, user_id=user_id)
-
-
-@router.get("/server/admin/info/{server_id}", response_model=AdminServerInfoWithLoad)
-def server_info(server_id: UUID, db: Session = Depends(get_db)):
-    project = admin_service.get_server_by_id(db, server_id=server_id)
-    if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
-
-    # TODO: replace stub with real metrics collection
-    stub_load = AdminServerLoad(
-        cpu_usage_percent=0.0,
-        ram_usage_percent=0.0,
-        ssd_usage_percent=0.0,
-        network_in_mbps=0.0,
-        network_out_mbps=0.0,
-    )
-    return AdminServerInfoWithLoad(**project, load=stub_load)
-
-
-@router.post("/disable/admin/server", response_model=AdminServerInfo)
-def disable_server(payload: AdminServerStatusChange, db: Session = Depends(get_db)):
-    project = admin_service.change_server_status(db, server_id=payload.server_id, new_status="disabled")
-    if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
-    return project
-
-
-@router.post("/activate/admin/server", response_model=AdminServerInfo)
-def activate_server(payload: AdminServerStatusChange, db: Session = Depends(get_db)):
-    project = admin_service.change_server_status(db, server_id=payload.server_id, new_status="active")
-    if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
-    return project
-
-
-@router.post("/add/admin/server", response_model=AdminServerCreatedResponse, status_code=status.HTTP_201_CREATED)
-def add_server(payload: AdminServerCreate, db: Session = Depends(get_db)):
-    project = admin_service.create_server(
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
+    project = admin_service.admin_create_project(
         db,
+        owner_id=user_id,
         name=payload.name,
-        owner_id=payload.owner_id,
         cpu_quota=payload.cpu_quota,
         ram_quota=payload.ram_quota,
         ssd_quota=payload.ssd_quota,
     )
-    return AdminServerCreatedResponse(id=project.id, name=project.name, status=project.status)
-
-
-@router.delete("/delete/admin/server/{server_id}", response_model=AdminServerInfo)
-def delete_server(server_id: UUID, db: Session = Depends(get_db)):
-    project = admin_service.delete_server(db, server_id=server_id)
-    if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
     return project
 
 
-@router.get("/search/admin/disable/server", response_model=list[AdminDisabledServerSearchResult])
-def search_disabled_servers(db: Session = Depends(get_db)):
-    return admin_service.get_disabled_servers(db)
+@router.post(
+    "/project/admin/disable/{project_id}",
+    response_model=AdminProjectResponse,
+)
+def admin_disable_project(project_id: UUID, db: Session = Depends(get_db)):
+    project = admin_service.admin_change_project_status(
+        db, project_id=project_id, new_status="disabled"
+    )
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
+        )
+    return project
 
 
-@router.get("/search/admin/disable/server/user/{user_id}", response_model=list[AdminDisabledServerSearchResult])
-def search_disabled_servers_for_user(user_id: UUID, db: Session = Depends(get_db)):
-    return admin_service.get_disabled_servers_for_user(db, user_id=user_id)
+@router.post(
+    "/project/admin/active/{project_id}",
+    response_model=AdminProjectResponse,
+)
+def admin_activate_project(project_id: UUID, db: Session = Depends(get_db)):
+    project = admin_service.admin_change_project_status(
+        db, project_id=project_id, new_status="active"
+    )
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
+        )
+    return project
+
+
+@router.delete(
+    "/project/admin/delete/{project_id}",
+    response_model=AdminProjectResponse,
+)
+def admin_delete_project(project_id: UUID, db: Session = Depends(get_db)):
+    project = admin_service.admin_delete_project(db, project_id=project_id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
+        )
+    return project
+
+
+@router.get(
+    "/project/admin/info/{project_id}",
+    response_model=AdminProjectResponse,
+)
+def admin_project_info(project_id: UUID, db: Session = Depends(get_db)):
+    project = admin_service.admin_get_project_info(db, project_id=project_id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
+        )
+    return project
+
+
+@router.get(
+    "/projects/admin/info/{user_id}",
+    response_model=AdminProjectsListResponse,
+)
+def admin_projects_by_user(user_id: UUID, db: Session = Depends(get_db)):
+    user = admin_service.get_user_by_id(db, user_id=user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
+    projects = admin_service.admin_list_projects_by_user(db, user_id=user_id)
+    return AdminProjectsListResponse(projects=projects)
+
+
+@router.get(
+    "/projects/admin/disabled",
+    response_model=AdminProjectsListResponse,
+)
+def admin_disabled_projects(db: Session = Depends(get_db)):
+    projects = admin_service.admin_list_disabled_projects(db)
+    return AdminProjectsListResponse(projects=projects)
+
+
+# ── Server (VM) admin endpoints ──────────────────────────────────────
+
+@router.post(
+    "/server/admin/add/{user_id}",
+    response_model=AdminVMResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def admin_add_server(
+    user_id: UUID,
+    payload: AdminVMCreateRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        vm = admin_service.admin_create_vm(
+            db,
+            owner_id=user_id,
+            name=payload.name,
+            project_id=payload.project_id,
+            cpu=payload.cpu,
+            ram=payload.ram,
+            ssd=payload.ssd,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        )
+    return vm
+
+
+@router.post(
+    "/server/admin/disable/{server_id}",
+    response_model=AdminVMResponse,
+)
+def admin_disable_server(server_id: UUID, db: Session = Depends(get_db)):
+    vm = admin_service.admin_change_vm_status(
+        db, server_id=server_id, new_status="DISABLED"
+    )
+    if not vm:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
+        )
+    return vm
+
+
+@router.post(
+    "/server/admin/active/{server_id}",
+    response_model=AdminVMResponse,
+)
+def admin_activate_server(server_id: UUID, db: Session = Depends(get_db)):
+    vm = admin_service.admin_change_vm_status(
+        db, server_id=server_id, new_status="RUNNING"
+    )
+    if not vm:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
+        )
+    return vm
+
+
+@router.delete(
+    "/server/admin/delete/{server_id}",
+    response_model=AdminVMResponse,
+)
+def admin_delete_server(server_id: UUID, db: Session = Depends(get_db)):
+    vm = admin_service.admin_delete_vm(db, server_id=server_id)
+    if not vm:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
+        )
+    return vm
+
+
+@router.get(
+    "/server/admin/info/{server_id}",
+    response_model=AdminVMInfoResponse,
+)
+def admin_server_info(server_id: UUID, db: Session = Depends(get_db)):
+    vm = admin_service.admin_get_server_info(db, server_id=server_id)
+    if not vm:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
+        )
+    load = admin_service.get_server_load(server_id)
+    base = AdminVMResponse.model_validate(vm)
+    return AdminVMInfoResponse(**base.model_dump(), **load)
+
+
+@router.get(
+    "/servers/admin/disabled",
+    response_model=AdminServersListResponse,
+)
+def admin_disabled_servers(db: Session = Depends(get_db)):
+    servers = admin_service.admin_list_disabled_servers(db)
+    return AdminServersListResponse(servers=servers)
+
+
+# ── User admin endpoints ─────────────────────────────────────────────
+
+@router.post(
+    "/user/admin/disable/{user_id}",
+    response_model=AdminUserInfo,
+)
+def admin_disable_user(user_id: UUID, db: Session = Depends(get_db)):
+    user = admin_service.admin_disable_user(db, user_id=user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
+    return user
+
+
+@router.post(
+    "/user/admin/active/{user_id}",
+    response_model=AdminUserInfo,
+)
+def admin_activate_user(user_id: UUID, db: Session = Depends(get_db)):
+    user = admin_service.admin_activate_user(db, user_id=user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
+    return user
+
+
+@router.delete(
+    "/user/admin/delete/{user_id}",
+    response_model=AdminUserInfo,
+)
+def admin_delete_user(user_id: UUID, db: Session = Depends(get_db)):
+    user = admin_service.admin_delete_user(db, user_id=user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
+    return user
+
+
+# ── List endpoints ───────────────────────────────────────────────────
+# /servers/admin/info/{user_id} и /servers/admin/info/{project_id}
+# имеют одинаковый path-паттерн (оба UUID), поэтому разделены на
+# .../user/{user_id} и .../project/{project_id}
+
+@router.get(
+    "/servers/admin/info/user/{user_id}",
+    response_model=AdminServersListResponse,
+)
+def admin_servers_by_user(user_id: UUID, db: Session = Depends(get_db)):
+    user = admin_service.get_user_by_id(db, user_id=user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
+    servers = admin_service.admin_list_servers_by_user(db, user_id=user_id)
+    return AdminServersListResponse(servers=servers)
+
+
+@router.get(
+    "/servers/admin/info/project/{project_id}",
+    response_model=AdminServersListResponse,
+)
+def admin_servers_by_project(project_id: UUID, db: Session = Depends(get_db)):
+    project = admin_service.admin_get_project_info(db, project_id=project_id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
+        )
+    servers = admin_service.admin_list_servers_by_project(
+        db, project_id=project_id
+    )
+    return AdminServersListResponse(servers=servers)
