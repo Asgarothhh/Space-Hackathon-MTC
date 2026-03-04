@@ -14,7 +14,7 @@ from backend.services.orchestrator import (
     run_job_create_ssh_for_vm,
     release_project_resources,
     _mark_job_failed,
-    _mark_job_success,
+    _mark_job_success, run_job_stop_vm,
 )
 from backend.services.network import allocate_ip_for_vm, release_ips_for_vm
 from uuid import UUID
@@ -321,3 +321,27 @@ def get_vm_by_id(db: Session, owner_id: UUID, server_id: UUID) -> Optional[Virtu
     """
     return db.query(VirtualMachine).join(Project, VirtualMachine.project_id == Project.id) \
         .filter(VirtualMachine.id == server_id, Project.owner_id == owner_id).first()
+
+
+def stop_server(db: Session, owner_id: uuid.UUID, server_id: uuid.UUID) -> Optional[VirtualMachine]:
+    """
+    Поставить задачу остановки VM и попытаться выполнить её немедленно.
+    Возвращает обновлённый объект VM или выбрасывает ValueError при отсутствии доступа.
+    """
+    vm = db.query(VirtualMachine).join(Project, VirtualMachine.project_id == Project.id)\
+        .filter(VirtualMachine.id == server_id, Project.owner_id == owner_id).first()
+    if not vm:
+        raise ValueError("VM not found or access denied")
+
+    # Поместить job в очередь и попытаться выполнить остановку сразу
+    job = enqueue_job(db, "VM", vm.id, "STOP_VM")
+    try:
+        run_job_stop_vm(db, vm)
+    except Exception:
+        logger.exception("stop_server: immediate run_job_stop_vm failed for vm %s", vm.id)
+
+    try:
+        db.refresh(vm)
+    except Exception:
+        logger.exception("stop_server: refresh failed for vm %s", vm.id)
+    return vm

@@ -5,7 +5,8 @@ from typing import List
 from uuid import UUID
 
 from backend.routers.dependencies import get_db, get_current_user
-from backend.services.vm import create_server, delete_server, update_server, start_server, create_ssh_link_for_vm, get_vm_by_id  # get_vm_by_id можно добавить в сервис
+from backend.services.vm import create_server, delete_server, update_server, start_server, create_ssh_link_for_vm, \
+    get_vm_by_id, stop_server  # get_vm_by_id можно добавить в сервис
 from backend.schemas.vm import VMCreate, VMResponse, VMUpdate
 
 router = APIRouter(prefix="/vm", tags=["vm"])
@@ -52,3 +53,12 @@ def api_delete_vm(server_id: UUID, db: Session = Depends(get_db), current_user =
     if not ok:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="VM not found or access denied")
     return None
+
+
+@router.post("/{server_id}/stop", response_model=VMResponse)
+def api_stop_vm(server_id: UUID, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+    try:
+        vm = stop_server(db, owner_id=current_user.id, server_id=server_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="VM not found or access denied")
+    return vm

@@ -367,3 +367,71 @@ def run_job_delete_project(db: Session, project: Project, job: Optional[Job] = N
         logger.exception("run_job_delete_project failed for project %s: %s", project.id, e)
         _mark_job_failed(db, job, str(e))
         return job
+
+
+def run_job_stop_vm(db: Session, vm: VirtualMachine) -> Optional[Job]:
+    """
+    Остановить VM: если есть docker_container_id — попытаться остановить контейнер,
+    затем обновить статус VM на STOPPED и пометить job как SUCCESS.
+    Возвращает Job.
+    """
+    job = enqueue_job(db, "VM", vm.id, "STOP_VM")
+    client = get_docker_client()
+    if client is None:
+        job.error_message = "Docker unavailable; stop queued"
+        try:
+            db.add(job)
+            db.commit()
+        except Exception:
+            db.rollback()
+        return job
+
+    try:
+        if vm.docker_container_id:
+            try:
+                container = client.containers.get(vm.docker_container_id)
+                # Попытка корректно остановить контейнер
+                try:
+                    container.stop(timeout=10)
+                except Exception:
+                    # если не удалось корректно остановить — принудительно
+                    try:
+                        container.kill()
+                    except Exception:
+                        logger.exception("Failed to kill container %s for vm %s", vm.docker_container_id, vm.id)
+                # После остановки контейнера можно оставить docker_container_id или очистить — здесь очищаем
+                vm.docker_container_id = None
+            except DockerNotFound:
+                # контейнера нет — просто очистим поле
+                vm.docker_container_id = None
+            except Exception:
+                logger.exception("Unexpected docker error while stopping container %s for VM %s", vm.docker_container_id, vm.id)
+                # не прерываем: попробуем всё равно обновить статус VM
+
+        # Обновляем статус VM и сохраняем
+        vm.status = "STOPPED"
+        db.add(vm)
+        _mark_job_success(db, job)
+        try:
+            db.add(job)
+            db.commit()
+            db.refresh(vm)
+        except Exception:
+            db.rollback()
+            logger.exception("DB commit failed in run_job_stop_vm for vm %s", vm.id)
+            _mark_job_failed(db, job, "DB commit failed after stopping VM")
+        return job
+
+    except Exception as e:
+        logger.exception("run_job_stop_vm failed for vm %s: %s", getattr(vm, "id", "<unknown>"), e)
+        try:
+            vm.status = "ERROR"
+            db.add(vm)
+            db.commit()
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+        _mark_job_failed(db, job, str(e))
+        return job
