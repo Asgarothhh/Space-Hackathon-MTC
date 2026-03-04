@@ -8,6 +8,8 @@ from backend.schemas.admin import (
     AdminUserInfo,
     AdminSoftDeleteUserResponse,
     AdminServerInfo,
+    AdminServerInfoWithLoad,
+    AdminServerLoad,
     AdminServerCreate,
     AdminServerStatusChange,
     AdminServerCreatedResponse,
@@ -60,12 +62,21 @@ def get_user_servers(user_id: UUID, db: Session = Depends(get_db)):
     return admin_service.get_servers_for_user(db, user_id=user_id)
 
 
-@router.get("/server/admin/info/{server_id}", response_model=AdminServerInfo)
+@router.get("/server/admin/info/{server_id}", response_model=AdminServerInfoWithLoad)
 def server_info(server_id: UUID, db: Session = Depends(get_db)):
     project = admin_service.get_server_by_id(db, server_id=server_id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
-    return project
+
+    # TODO: replace stub with real metrics collection
+    stub_load = AdminServerLoad(
+        cpu_usage_percent=0.0,
+        ram_usage_percent=0.0,
+        ssd_usage_percent=0.0,
+        network_in_mbps=0.0,
+        network_out_mbps=0.0,
+    )
+    return AdminServerInfoWithLoad(**project, load=stub_load)
 
 
 @router.post("/disable/admin/server", response_model=AdminServerInfo)

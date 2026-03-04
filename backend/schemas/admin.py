@@ -55,5 +55,17 @@ class AdminServerCreatedResponse(BaseModel):
     status: str
 
 
+class AdminServerLoad(BaseModel):
+    cpu_usage_percent: float
+    ram_usage_percent: float
+    ssd_usage_percent: float
+    network_in_mbps: float
+    network_out_mbps: float
+
+
+class AdminServerInfoWithLoad(AdminServerInfo):
+    load: AdminServerLoad
+
+
 class AdminDisabledServerSearchResult(AdminServerInfo):
     pass
