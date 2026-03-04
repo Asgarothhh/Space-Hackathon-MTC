@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from backend.models.compute import VirtualMachine
 from backend.models.projects import Project
-from backend.services.orchestrator import enqueue_job, run_job_delete_vm, run_job_create_vm, _mark_job_failed, _mark_job_success
+from backend.services.orchestrator import enqueue_job, run_job_delete_vm, run_job_create_vm, _mark_job_failed, \
+    _mark_job_success
 
 logger = logging.getLogger(__name__)
 
@@ -167,3 +168,6 @@ def get_projects_for_user(db: Session, user_id: uuid.UUID, search: Optional[str]
     if search:
         q = q.filter(Project.name.ilike(f"%{search}%"))
     return q.all()
+
+
+

@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Body
+# backend/routers/vm.py
+from fastapi import APIRouter, Depends, HTTPException, status
 from uuid import UUID
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -12,7 +13,7 @@ from backend.schemas.user import (
     UserServerDisable,
     UserServerRename,
 )
-from backend.services.user import (
+from backend.services.vm import (
     create_server,
     update_server,
     delete_server,
@@ -26,10 +27,25 @@ router = APIRouter(prefix="/vm", tags=["vm"])
 
 @router.post("/create", response_model=UserServerBase, status_code=status.HTTP_201_CREATED)
 def create_server_endpoint(payload: UserServerCreate, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+    """
+    Пользователь создаёт VM. Проект (tenant) подбирается автоматически (best-fit),
+    привязывается к пользователю и ресурсы резервируются.
+    В payload НЕ должно быть поля project_id.
+    """
     try:
-        vm = create_server(db, owner_id=current_user.id, name=payload.name, project_id=payload.project_id, cpu=payload.cpu, ram=payload.ram, ssd=payload.ssd)
+        vm = create_server(
+            db,
+            owner_id=current_user.id,
+            name=payload.name,
+            cpu=payload.cpu,
+            ram=payload.ram,
+            ssd=payload.ssd,
+        )
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        msg = str(e)
+        if "No suitable project" in msg or "Quota" in msg:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=msg)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
     except Exception:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
     return UserServerBase.from_orm(vm)
@@ -86,7 +102,7 @@ def delete_server_endpoint(server_id: str, db: Session = Depends(get_db), curren
 
 
 @router.delete("/delete", status_code=status.HTTP_204_NO_CONTENT)
-def delete_server_by_body(payload: dict = Body(...), db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+def delete_server_by_body(payload: dict, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
     server_id = payload.get("server_id")
     if not server_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="server_id is required in body")

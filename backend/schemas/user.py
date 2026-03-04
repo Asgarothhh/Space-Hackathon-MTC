@@ -13,7 +13,6 @@ class TokenResponse(BaseModel):
 
 class UserServerCreate(BaseModel):
     name: str
-    project_id: UUID
     cpu: int
     ram: int
     ssd: int
