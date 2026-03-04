@@ -5,15 +5,13 @@ from uuid import UUID
 from pydantic import BaseModel, EmailStr
 
 
-class AdminUserBase(BaseModel):
+class AdminUserInfo(BaseModel):
     id: UUID
     email: EmailStr
     role: str
     is_active: bool
     created_at: datetime
 
-
-class AdminUserInfo(AdminUserBase):
     class Config:
         from_attributes = True
 
@@ -23,22 +21,17 @@ class AdminSoftDeleteUserResponse(BaseModel):
     is_active: bool
 
 
-class AdminServerBase(BaseModel):
+class AdminServerInfo(BaseModel):
+    """'Server' in admin context = Project + list of VM ids."""
     id: UUID
     name: str
-    project_id: UUID
-    cpu: int
-    ram: int
-    ssd: int
-    network_speed: Optional[int] = None
-    network_ipv4: Optional[str] = None
-    network_ipv6: Optional[str] = None
+    owner_id: UUID
+    cpu_quota: int
+    ram_quota: int
+    ssd_quota: int
     status: str
     created_at: datetime
-
-
-class AdminServerInfo(AdminServerBase):
-    docker_container_id: Optional[str] = None
+    server_ids: list[UUID] = []
 
     class Config:
         from_attributes = True
@@ -46,13 +39,10 @@ class AdminServerInfo(AdminServerBase):
 
 class AdminServerCreate(BaseModel):
     name: str
-    project_id: UUID
-    cpu: int
-    ram: int
-    ssd: int
-    network_speed: Optional[int] = None
-    network_ipv4: Optional[str] = None
-    network_ipv6: Optional[str] = None
+    owner_id: UUID
+    cpu_quota: int = 8
+    ram_quota: int = 16384
+    ssd_quota: int = 100
 
 
 class AdminServerStatusChange(BaseModel):
@@ -65,6 +55,17 @@ class AdminServerCreatedResponse(BaseModel):
     status: str
 
 
+class AdminServerLoad(BaseModel):
+    cpu_usage_percent: float
+    ram_usage_percent: float
+    ssd_usage_percent: float
+    network_in_mbps: float
+    network_out_mbps: float
+
+
+class AdminServerInfoWithLoad(AdminServerInfo):
+    load: AdminServerLoad
+
+
 class AdminDisabledServerSearchResult(AdminServerInfo):
     pass
-
