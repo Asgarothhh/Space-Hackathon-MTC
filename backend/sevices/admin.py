@@ -49,6 +49,9 @@ def create_server(
     cpu: int,
     ram: int,
     ssd: int,
+    network_speed: int | None = None,
+    network_ipv4: str | None = None,
+    network_ipv6: str | None = None,
 ) -> VirtualMachine:
     vm = VirtualMachine(
         name=name,
@@ -56,6 +59,9 @@ def create_server(
         cpu=cpu,
         ram=ram,
         ssd=ssd,
+        network_speed=network_speed,
+        network_ipv4=network_ipv4,
+        network_ipv6=network_ipv6,
         status="active",
     )
     db.add(vm)

@@ -30,6 +30,9 @@ class AdminServerBase(BaseModel):
     cpu: int
     ram: int
     ssd: int
+    network_speed: Optional[int] = None
+    network_ipv4: Optional[str] = None
+    network_ipv6: Optional[str] = None
     status: str
     created_at: datetime
 
@@ -47,6 +50,9 @@ class AdminServerCreate(BaseModel):
     cpu: int
     ram: int
     ssd: int
+    network_speed: Optional[int] = None
+    network_ipv4: Optional[str] = None
+    network_ipv6: Optional[str] = None
 
 
 class AdminServerStatusChange(BaseModel):

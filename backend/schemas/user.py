@@ -34,6 +34,9 @@ class UserServerBase(BaseModel):
     cpu: int
     ram: int
     ssd: int
+    network_speed: Optional[int] = None
+    network_ipv4: Optional[str] = None
+    network_ipv6: Optional[str] = None
     status: str
     created_at: datetime
 
@@ -47,6 +50,9 @@ class UserServerCreate(BaseModel):
     cpu: int
     ram: int
     ssd: int
+    network_speed: Optional[int] = None
+    network_ipv4: Optional[str] = None
+    network_ipv6: Optional[str] = None
 
 
 class UserServerUpdate(BaseModel):
@@ -54,6 +60,9 @@ class UserServerUpdate(BaseModel):
     cpu: Optional[int] = None
     ram: Optional[int] = None
     ssd: Optional[int] = None
+    network_speed: Optional[int] = None
+    network_ipv4: Optional[str] = None
+    network_ipv6: Optional[str] = None
 
 
 class UserServerRename(BaseModel):

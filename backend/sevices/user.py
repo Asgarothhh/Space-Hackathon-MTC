@@ -38,6 +38,9 @@ def create_server(
     cpu: int,
     ram: int,
     ssd: int,
+    network_speed: int | None = None,
+    network_ipv4: str | None = None,
+    network_ipv6: str | None = None,
 ) -> VirtualMachine:
     # Валидация: проект должен принадлежать пользователю
     project = db.query(Project).filter(Project.id == project_id, Project.owner_id == owner_id).first()
@@ -50,6 +53,9 @@ def create_server(
         cpu=cpu,
         ram=ram,
         ssd=ssd,
+        network_speed=network_speed,
+        network_ipv4=network_ipv4,
+        network_ipv6=network_ipv6,
         status="active",
     )
     db.add(vm)
@@ -66,6 +72,9 @@ def update_server(
     cpu: int | None = None,
     ram: int | None = None,
     ssd: int | None = None,
+    network_speed: int | None = None,
+    network_ipv4: str | None = None,
+    network_ipv6: str | None = None,
 ) -> Optional[VirtualMachine]:
     vm = get_server_by_id(db, server_id)
     if not vm:
@@ -82,6 +91,12 @@ def update_server(
         vm.ram = ram
     if ssd is not None:
         vm.ssd = ssd
+    if network_speed is not None:
+        vm.network_speed = network_speed
+    if network_ipv4 is not None:
+        vm.network_ipv4 = network_ipv4
+    if network_ipv6 is not None:
+        vm.network_ipv6 = network_ipv6
 
     db.add(vm)
     db.commit()
