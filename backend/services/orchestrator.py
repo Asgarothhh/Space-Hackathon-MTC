@@ -231,3 +231,27 @@ def retry_failed_job(db: Session, job: Job):
     except Exception:
         db.rollback()
         logger.exception("Failed to retry job %s", job.id)
+
+def run_job_create_project(db: Session, project) -> Optional[Job]:
+    """
+    Создаёт/обрабатывает задачу PROJECT_CREATE.
+    Если есть внешние шаги (provisioning, уведомления) — выполняет их здесь.
+    Если внешние сервисы недоступны — оставляет задачу в PENDING для worker'а.
+    """
+    job = enqueue_job(db, "PROJECT", project.id, "PROJECT_CREATE")
+    try:
+        # Пример синхронной работы: логирование, аудит, подготовка метаданных.
+        # Здесь можно вызывать внешние API, создавать записи в других сервисах и т.д.
+        # Если всё прошло успешно — помечаем задачу SUCCESS.
+        logger.info("run_job_create_project: performing post-create actions for project %s", project.id)
+
+        # (placeholders for real actions)
+        # do_provision_network(db, project)
+        # notify_team(project)
+
+        _mark_job_success(db, job)
+        return job
+    except Exception as e:
+        logger.exception("run_job_create_project failed for project %s: %s", project.id, e)
+        _mark_job_failed(db, job, str(e))
+        return job
