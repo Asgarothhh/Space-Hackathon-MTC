@@ -1,12 +1,10 @@
+# backend/services/orchestrator.py
 import uuid
 import logging
 from typing import Optional
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
-
 from backend.models.orchestrator import Job
-from backend.models.compute import VirtualMachine
-
 try:
     import docker
     from docker.errors import DockerException, NotFound as DockerNotFound
@@ -17,12 +15,7 @@ except Exception:
 
 logger = logging.getLogger(__name__)
 
-
 def get_docker_client():
-    """
-    Попытаться создать docker client и проверить соединение.
-    Возвращает docker.DockerClient или None, если Docker недоступен.
-    """
     if docker is None:
         return None
     try:
@@ -32,12 +25,7 @@ def get_docker_client():
     except Exception:
         return None
 
-
 def enqueue_job(db: Session, resource_type: str, resource_id: uuid.UUID, action: str) -> Job:
-    """
-    Создаёт запись задачи в таблице orchestrator.jobs со статусом PENDING.
-    Возвращает ORM-объект Job.
-    """
     job = Job(resource_type=resource_type, resource_id=resource_id, action=action, status="PENDING")
     try:
         db.add(job)
@@ -48,7 +36,6 @@ def enqueue_job(db: Session, resource_type: str, resource_id: uuid.UUID, action:
         db.rollback()
         raise
 
-
 def _mark_job_failed(db: Session, job: Job, error_message: str):
     job.status = "FAILED"
     job.error_message = error_message
@@ -58,7 +45,6 @@ def _mark_job_failed(db: Session, job: Job, error_message: str):
     except Exception:
         db.rollback()
 
-
 def _mark_job_success(db: Session, job: Job):
     job.status = "SUCCESS"
     try:
@@ -67,14 +53,114 @@ def _mark_job_success(db: Session, job: Job):
     except Exception:
         db.rollback()
 
+from backend.models.compute import VirtualMachine
+from backend.models.projects import Project
+from sqlalchemy import func
+
+def release_project_resources(db: Session, project_id: uuid.UUID, cpu: int, ram: int, ssd: int, maybe_unassign_owner: bool = False):
+    """
+    Уменьшить cpu_used/ram_used/ssd_used у проекта.
+    По умолчанию НЕ снимает owner_id/is_allocated (поведение 'keep').
+    Если maybe_unassign_owner=True — снимет привязку только при явном требовании.
+    """
+    try:
+        proj = db.query(Project).filter(Project.id == project_id).with_for_update().one_or_none()
+        if not proj:
+            return
+        proj.cpu_used = max(0, (proj.cpu_used or 0) - (cpu or 0))
+        proj.ram_used = max(0, (proj.ram_used or 0) - (ram or 0))
+        proj.ssd_used = max(0, (proj.ssd_used or 0) - (ssd or 0))
+        db.add(proj)
+        db.flush()
+
+        if maybe_unassign_owner:
+            vm_count = db.query(func.count(VirtualMachine.id)).filter(VirtualMachine.project_id == project_id).scalar() or 0
+            if vm_count == 0:
+                if proj.is_allocated:
+                    proj.owner_id = None
+                    proj.is_allocated = False
+                    db.add(proj)
+        db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        logger.exception("Failed to release resources for project %s", project_id)
+
+def run_job_create_ssh_for_vm(db: Session, vm: VirtualMachine) -> Optional[Job]:
+    """
+    Попытаться сформировать ssh_link для VM.
+    Логика:
+      1) Если есть docker_container_id и docker доступен — инспектируем контейнер (ports / networks).
+      2) Если не удалось — используем vm.network_ipv4 / vm.network_ipv6.
+      3) Если найден endpoint — сохраняем vm.ssh_link и помечаем job SUCCESS.
+      4) Иначе — помечаем job FAILED с понятной ошибкой.
+    """
+    job = enqueue_job(db, "VM", vm.id, "CREATE_SSH")
+    client = get_docker_client()
+    try:
+        ssh_link = None
+
+        # 1) Попытка через docker container
+        if vm.docker_container_id and client is not None:
+            try:
+                container = client.containers.get(vm.docker_container_id)
+                ports = container.attrs.get("NetworkSettings", {}).get("Ports", {}) or {}
+                binding = ports.get("22/tcp")
+                if binding and isinstance(binding, list) and binding:
+                    host_ip = binding[0].get("HostIp", "127.0.0.1")
+                    host_port = binding[0].get("HostPort")
+                    ssh_link = f"ssh root@{host_ip} -p {host_port}"
+                else:
+                    networks = container.attrs.get("NetworkSettings", {}).get("Networks", {}) or {}
+                    if networks:
+                        ip = next(iter(networks.values())).get("IPAddress")
+                        if ip:
+                            ssh_link = f"ssh root@{ip}"
+            except DockerNotFound:
+                pass
+            except Exception:
+                logger.exception("Docker inspection failed for container %s (vm %s)", vm.docker_container_id, vm.id)
+
+        # 2) Fallback на сетевые поля VM
+        if not ssh_link:
+            try:
+                db.refresh(vm)
+            except Exception:
+                logger.exception("Failed to refresh vm %s before SSH creation", vm.id)
+            if getattr(vm, "network_ipv4", None):
+                ssh_link = f"ssh root@{vm.network_ipv4}"
+            elif getattr(vm, "network_ipv6", None):
+                ssh_link = f"ssh root@[{vm.network_ipv6}]"
+
+        # 3) Если ничего не найдено — FAIL
+        if not ssh_link:
+            _mark_job_failed(db, job, "Could not determine SSH endpoint for VM")
+            return job
+
+        # 4) Сохранить ssh_link в VM (с блокировкой строки)
+        vm_row = db.query(VirtualMachine).filter(VirtualMachine.id == vm.id).with_for_update().first()
+        if not vm_row:
+            _mark_job_failed(db, job, "VM not found when saving SSH link")
+            return job
+
+        vm_row.ssh_link = ssh_link
+        db.add(vm_row)
+        _mark_job_success(db, job)
+        try:
+            db.add(job)
+            db.commit()
+        except Exception:
+            db.rollback()
+        return job
+
+    except Exception as e:
+        logger.exception("run_job_create_ssh_for_vm failed for vm %s: %s", getattr(vm, "id", "<unknown>"), e)
+        _mark_job_failed(db, job, str(e))
+        return job
 
 def run_job_create_vm(db: Session, vm: VirtualMachine) -> Optional[Job]:
-    """
-    Безопасный старт/создание контейнера для VM (вариант A).
-    - Если vm.docker_container_id задан, пытаемся найти контейнер и запустить его.
-    - Если контейнера нет или старт не удался — очищаем docker_container_id и создаём новый контейнер.
-    - При отсутствии Docker оставляем задачу в PENDING.
-    """
     job = enqueue_job(db, "VM", vm.id, "CREATE_VM")
     client = get_docker_client()
     if client is None:
@@ -87,16 +173,14 @@ def run_job_create_vm(db: Session, vm: VirtualMachine) -> Optional[Job]:
         return job
 
     try:
-        # Если уже есть docker_container_id — попробуем использовать существующий контейнер
+        # Если у VM уже есть контейнер — попытаться его запустить/проверить
         if vm.docker_container_id:
             try:
                 container = client.containers.get(vm.docker_container_id)
-                # Попытаться запустить, если контейнер не запущен
                 if getattr(container, "status", None) != "running":
                     try:
                         container.start()
                     except Exception:
-                        # Если не удалось стартовать — пересоздадим ниже
                         raise
                 vm.status = "RUNNING"
                 db.add(vm)
@@ -104,9 +188,13 @@ def run_job_create_vm(db: Session, vm: VirtualMachine) -> Optional[Job]:
                 db.add(job)
                 db.commit()
                 db.refresh(vm)
+                # После commit/refresh — попытка сформировать ssh (fallback на network_* будет виден)
+                try:
+                    run_job_create_ssh_for_vm(db, vm)
+                except Exception:
+                    logger.exception("Immediate run_job_create_ssh_for_vm failed for vm %s", vm.id)
                 return job
             except DockerNotFound:
-                # контейнера нет — очистим поле и продолжим создание нового
                 vm.docker_container_id = None
                 try:
                     db.add(vm)
@@ -114,7 +202,6 @@ def run_job_create_vm(db: Session, vm: VirtualMachine) -> Optional[Job]:
                 except Exception:
                     db.rollback()
             except Exception as e:
-                # Не удалось стартовать существующий контейнер — очистим поле и продолжим создание нового
                 logger.exception("Error while starting existing container %s for vm %s: %s", vm.docker_container_id, vm.id, e)
                 vm.docker_container_id = None
                 try:
@@ -123,7 +210,7 @@ def run_job_create_vm(db: Session, vm: VirtualMachine) -> Optional[Job]:
                 except Exception:
                     db.rollback()
 
-        # Создаём новый контейнер
+        # Создаём контейнер
         container = client.containers.run(
             "alpine:latest",
             command="sleep 3600",
@@ -132,12 +219,38 @@ def run_job_create_vm(db: Session, vm: VirtualMachine) -> Optional[Job]:
             labels={"project_id": str(vm.project_id), "vm_id": str(vm.id)}
         )
         vm.docker_container_id = container.id
+
+        # Попытка извлечь сетевую информацию и проброс порта 22
+        try:
+            ports = container.attrs.get("NetworkSettings", {}).get("Ports", {}) or {}
+            binding = ports.get("22/tcp")
+            if binding and isinstance(binding, list) and binding:
+                host_ip = binding[0].get("HostIp", "127.0.0.1")
+                host_port = binding[0].get("HostPort")
+                vm.ssh_link = f"ssh root@{host_ip} -p {host_port}"
+            else:
+                networks = container.attrs.get("NetworkSettings", {}).get("Networks", {}) or {}
+                if networks:
+                    ip = next(iter(networks.values())).get("IPAddress")
+                    if ip:
+                        vm.ssh_link = f"ssh root@{ip}"
+        except Exception:
+            logger.exception("Failed to inspect container network for vm %s", vm.id)
+
+        # Сохраняем VM и финализируем статус
         vm.status = "RUNNING"
         db.add(vm)
         _mark_job_success(db, job)
         db.add(job)
         db.commit()
         db.refresh(vm)
+
+        # После commit/refresh — попытка сформировать ssh_link (fallback на network_* будет виден)
+        try:
+            run_job_create_ssh_for_vm(db, vm)
+        except Exception:
+            logger.exception("Immediate run_job_create_ssh_for_vm failed for vm %s", vm.id)
+
         return job
     except Exception as e:
         logger.exception("Error while creating/starting container for VM %s: %s", vm.id, e)
@@ -147,18 +260,16 @@ def run_job_create_vm(db: Session, vm: VirtualMachine) -> Optional[Job]:
             db.commit()
         except Exception:
             db.rollback()
+        # Попытка освободить ресурсы проекта (не снимая привязку по умолчанию)
+        try:
+            release_project_resources(db, vm.project_id, vm.cpu or 0, vm.ram or 0, vm.ssd or 0, maybe_unassign_owner=False)
+        except Exception:
+            logger.exception("Failed to release project resources after provisioning failure for vm %s", vm.id)
         _mark_job_failed(db, job, str(e))
         return job
 
-
 def run_job_delete_vm(db: Session, vm: VirtualMachine) -> Optional[Job]:
-    """
-    Удаление контейнера и записи VM.
-    - Если Docker недоступен — задача остаётся в PENDING.
-    - Ошибки при удалении контейнера логируются, но не блокируют удаление записи VM.
-    """
     job = enqueue_job(db, "VM", vm.id, "DELETE_VM")
-
     client = get_docker_client()
     if client is None:
         job.error_message = "Docker unavailable; delete queued"
@@ -176,19 +287,24 @@ def run_job_delete_vm(db: Session, vm: VirtualMachine) -> Optional[Job]:
                 try:
                     container.remove(force=True)
                 except Exception:
-                    # логируем, но не прерываем удаление записи VM
                     logger.exception("Error removing container %s for VM %s", vm.docker_container_id, vm.id)
             except DockerNotFound:
-                # контейнер уже отсутствует — продолжаем
                 pass
             except Exception:
-                # любые другие ошибки с Docker не должны блокировать удаление записи
                 logger.exception("Unexpected docker error while removing container %s for VM %s", vm.docker_container_id, vm.id)
 
-        # Удаляем запись VM из БД
+        project_id = vm.project_id
+        cpu = vm.cpu or 0
+        ram = vm.ram or 0
+        ssd = vm.ssd or 0
+
         try:
             db.delete(vm)
             db.commit()
+            try:
+                release_project_resources(db, project_id, cpu, ram, ssd, maybe_unassign_owner=False)
+            except Exception:
+                logger.exception("Failed to release project resources after VM deletion %s", vm.id)
             _mark_job_success(db, job)
             return job
         except Exception as e:
@@ -199,59 +315,55 @@ def run_job_delete_vm(db: Session, vm: VirtualMachine) -> Optional[Job]:
         _mark_job_failed(db, job, str(e))
         return job
 
-
-def get_job(db: Session, job_id: uuid.UUID) -> Optional[Job]:
-    """Вернуть задачу по id."""
-    try:
-        return db.query(Job).filter(Job.id == job_id).first()
-    except Exception:
-        logger.exception("Failed to fetch job %s", job_id)
-        return None
-
-
-def list_pending_jobs(db: Session):
-    """Список задач со статусом PENDING (для worker)."""
-    try:
-        return db.query(Job).filter(Job.status == "PENDING").all()
-    except Exception:
-        logger.exception("Failed to list pending jobs")
-        return []
-
-
-def retry_failed_job(db: Session, job: Job):
-    """
-    Пометить FAILED -> PENDING для повторной попытки.
-    Используется worker'ом при необходимости.
-    """
-    try:
-        job.status = "PENDING"
-        job.error_message = None
-        db.add(job)
-        db.commit()
-    except Exception:
-        db.rollback()
-        logger.exception("Failed to retry job %s", job.id)
-
+# Project job handlers (create/start/stop/delete)
 def run_job_create_project(db: Session, project) -> Optional[Job]:
-    """
-    Создаёт/обрабатывает задачу PROJECT_CREATE.
-    Если есть внешние шаги (provisioning, уведомления) — выполняет их здесь.
-    Если внешние сервисы недоступны — оставляет задачу в PENDING для worker'а.
-    """
     job = enqueue_job(db, "PROJECT", project.id, "PROJECT_CREATE")
     try:
-        # Пример синхронной работы: логирование, аудит, подготовка метаданных.
-        # Здесь можно вызывать внешние API, создавать записи в других сервисах и т.д.
-        # Если всё прошло успешно — помечаем задачу SUCCESS.
         logger.info("run_job_create_project: performing post-create actions for project %s", project.id)
-
-        # (placeholders for real actions)
-        # do_provision_network(db, project)
-        # notify_team(project)
-
         _mark_job_success(db, job)
         return job
     except Exception as e:
         logger.exception("run_job_create_project failed for project %s: %s", project.id, e)
+        _mark_job_failed(db, job, str(e))
+        return job
+
+def run_job_start_project(db: Session, project: Project, job: Optional[Job] = None) -> Optional[Job]:
+    if job is None:
+        job = enqueue_job(db, "PROJECT", project.id, "START_PROJECT")
+    try:
+        project.status = "ACTIVE"
+        db.add(project)
+        db.commit()
+        _mark_job_success(db, job)
+        return job
+    except Exception as e:
+        logger.exception("run_job_start_project failed for project %s: %s", project.id, e)
+        _mark_job_failed(db, job, str(e))
+        return job
+
+def run_job_stop_project(db: Session, project: Project, job: Optional[Job] = None) -> Optional[Job]:
+    if job is None:
+        job = enqueue_job(db, "PROJECT", project.id, "STOP_PROJECT")
+    try:
+        project.status = "INACTIVE"
+        db.add(project)
+        db.commit()
+        _mark_job_success(db, job)
+        return job
+    except Exception as e:
+        logger.exception("run_job_stop_project failed for project %s: %s", project.id, e)
+        _mark_job_failed(db, job, str(e))
+        return job
+
+def run_job_delete_project(db: Session, project: Project, job: Optional[Job] = None) -> Optional[Job]:
+    if job is None:
+        job = enqueue_job(db, "PROJECT", project.id, "DELETE_PROJECT")
+    try:
+        db.delete(project)
+        db.commit()
+        _mark_job_success(db, job)
+        return job
+    except Exception as e:
+        logger.exception("run_job_delete_project failed for project %s: %s", project.id, e)
         _mark_job_failed(db, job, str(e))
         return job

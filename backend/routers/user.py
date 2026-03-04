@@ -1,6 +1,10 @@
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from backend.models.compute import VirtualMachine
+from backend.models.projects import Project
 from backend.routers.dependencies import get_db, get_current_user
 from backend.schemas.auth import UserRegisterRequest, UserResponse
 from backend.schemas.user import LoginRequest, TokenResponse, UserProjectsSearchResponse
@@ -28,7 +32,24 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     return TokenResponse(access_token=token)
 
 
-@router.get("/search_projects", response_model=UserProjectsSearchResponse)
-def search_projects(q: str | None = None, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
-    projects = get_projects_for_user(db, user_id=current_user.id, search=q)
-    return UserProjectsSearchResponse(projects=[{"id": str(p.id), "name": p.name} for p in projects])
+@router.get("/search_projects")
+def search_projects_for_user(db: Session = Depends(get_db), q: Optional[str] = None):
+    # возвращаем VM, которые размещены в проектах (фильтры по доступности/статусу)
+    vms = db.query(VirtualMachine).join(Project, VirtualMachine.project_id == Project.id).filter(
+        VirtualMachine.status == 'RUNNING'  # пример фильтра
+    ).all()
+
+    return [
+        {
+            "vm_id": str(vm.id),
+            "vm_name": vm.name,
+            "status": vm.status,
+            "cpu": vm.cpu,
+            "ram": vm.ram,
+            "ssd": vm.ssd,
+            "ssh_link": vm.ssh_link,
+            "project_id": str(vm.project_id),
+            "project_name": vm.project.name,
+        }
+        for vm in vms
+    ]

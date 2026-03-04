@@ -1,19 +1,36 @@
-from pydantic import BaseModel, Field, constr, conint
+# backend/schemas/project.py
+from pydantic import BaseModel
 from uuid import UUID
+from typing import Optional
 
 class ProjectCreateRequest(BaseModel):
-    name: constr(strip_whitespace=True, min_length=1, max_length=255)
-    cpu_quota: conint(ge=1) = Field(..., description="vCPU quota")
-    ram_quota: conint(ge=1) = Field(..., description="RAM quota in MB")
-    ssd_quota: conint(ge=1) = Field(..., description="SSD quota in GB")
-
-class ProjectResponse(BaseModel):
-    id: UUID
     name: str
-    owner_id: UUID
     cpu_quota: int
     ram_quota: int
     ssd_quota: int
 
+class ProjectUpdateRequest(BaseModel):
+    cpu_quota: int
+    ram_quota: int
+    ssd_quota: int
+
+class ProjectResponse(BaseModel):
+    id: UUID
+    name: str
+    # owner_id может быть NULL для шаблонов проектов, поэтому Optional
+    owner_id: Optional[UUID] = None
+    cpu_quota: int
+    ram_quota: int
+    ssd_quota: int
+    cpu_used: int
+    ram_used: int
+    ssd_used: int
+    is_allocated: bool
+    status: str
+
     class Config:
         from_attributes = True
+
+class ProjectActionResponse(BaseModel):
+    job_id: UUID
+    status: str
