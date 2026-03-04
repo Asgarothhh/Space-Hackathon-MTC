@@ -48,12 +48,14 @@ def create_server(
     project_id: UUID,
     cpu: int,
     ram: int,
+    ssd: int,
 ) -> VirtualMachine:
     vm = VirtualMachine(
         name=name,
         project_id=project_id,
         cpu=cpu,
         ram=ram,
+        ssd=ssd,
         status="active",
     )
     db.add(vm)

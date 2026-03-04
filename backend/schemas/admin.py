@@ -29,6 +29,7 @@ class AdminServerBase(BaseModel):
     project_id: UUID
     cpu: int
     ram: int
+    ssd: int
     status: str
     created_at: datetime
 
@@ -45,6 +46,7 @@ class AdminServerCreate(BaseModel):
     project_id: UUID
     cpu: int
     ram: int
+    ssd: int
 
 
 class AdminServerStatusChange(BaseModel):

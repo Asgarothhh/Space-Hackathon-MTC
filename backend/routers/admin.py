@@ -66,6 +66,7 @@ def add_server(payload: AdminServerCreate, db: Session = Depends(get_db)):
         project_id=payload.project_id,
         cpu=payload.cpu,
         ram=payload.ram,
+        ssd=payload.ssd,
     )
     return AdminServerCreatedResponse(id=vm.id, name=vm.name, status=vm.status)
 

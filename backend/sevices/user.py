@@ -37,6 +37,7 @@ def create_server(
     project_id: UUID,
     cpu: int,
     ram: int,
+    ssd: int,
 ) -> VirtualMachine:
     # Валидация: проект должен принадлежать пользователю
     project = db.query(Project).filter(Project.id == project_id, Project.owner_id == owner_id).first()
@@ -48,6 +49,7 @@ def create_server(
         project_id=project_id,
         cpu=cpu,
         ram=ram,
+        ssd=ssd,
         status="active",
     )
     db.add(vm)
@@ -63,6 +65,7 @@ def update_server(
     server_id: UUID,
     cpu: int | None = None,
     ram: int | None = None,
+    ssd: int | None = None,
 ) -> Optional[VirtualMachine]:
     vm = get_server_by_id(db, server_id)
     if not vm:
@@ -77,6 +80,8 @@ def update_server(
         vm.cpu = cpu
     if ram is not None:
         vm.ram = ram
+    if ssd is not None:
+        vm.ssd = ssd
 
     db.add(vm)
     db.commit()

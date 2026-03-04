@@ -20,6 +20,7 @@ class UserProject(BaseModel):
     name: str
     cpu_quota: int
     ram_quota: int
+    ssd_quota: int
     created_at: datetime
 
     class Config:
@@ -32,6 +33,7 @@ class UserServerBase(BaseModel):
     project_id: UUID
     cpu: int
     ram: int
+    ssd: int
     status: str
     created_at: datetime
 
@@ -44,12 +46,14 @@ class UserServerCreate(BaseModel):
     project_id: UUID
     cpu: int
     ram: int
+    ssd: int
 
 
 class UserServerUpdate(BaseModel):
     server_id: UUID
     cpu: Optional[int] = None
     ram: Optional[int] = None
+    ssd: Optional[int] = None
 
 
 class UserServerRename(BaseModel):
