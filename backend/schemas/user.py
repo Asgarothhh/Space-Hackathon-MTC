@@ -1,31 +1,22 @@
-from datetime import datetime
-from typing import Optional, List
+# backend/schemas/user.py
+from pydantic import BaseModel
 from uuid import UUID
-
-from pydantic import BaseModel, EmailStr
-
+from typing import Optional, List
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: str
     password: str
-
 
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
 
-
-class UserProject(BaseModel):
-    id: UUID
+class UserServerCreate(BaseModel):
     name: str
-    cpu_quota: int
-    ram_quota: int
-    ssd_quota: int
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
+    project_id: UUID
+    cpu: int
+    ram: int
+    ssd: int
 
 class UserServerBase(BaseModel):
     id: UUID
@@ -35,19 +26,10 @@ class UserServerBase(BaseModel):
     ram: int
     ssd: int
     status: str
-    created_at: datetime
+    docker_container_id: Optional[str] = None
 
     class Config:
         from_attributes = True
-
-
-class UserServerCreate(BaseModel):
-    name: str
-    project_id: UUID
-    cpu: int
-    ram: int
-    ssd: int
-
 
 class UserServerUpdate(BaseModel):
     server_id: UUID
@@ -55,20 +37,15 @@ class UserServerUpdate(BaseModel):
     ram: Optional[int] = None
     ssd: Optional[int] = None
 
-
 class UserServerRename(BaseModel):
     server_id: UUID
     new_name: str
 
-
 class UserServerDisable(BaseModel):
     server_id: UUID
-
 
 class UserServerDelete(BaseModel):
     server_id: UUID
 
-
 class UserProjectsSearchResponse(BaseModel):
-    projects: List[UserProject]
-
+    projects: List[dict]

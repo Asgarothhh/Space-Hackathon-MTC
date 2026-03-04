@@ -3,8 +3,8 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from models.auth import User
-from models.compute import VirtualMachine
+from backend.models.auth import User
+from backend.models.compute import VirtualMachine
 
 
 def get_user_by_id(db: Session, user_id: UUID) -> User | None:

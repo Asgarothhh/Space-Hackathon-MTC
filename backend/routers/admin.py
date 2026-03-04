@@ -3,9 +3,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from models.db import SessionLocal
-from models.compute import VirtualMachine
-from schemas.admin import (
+from backend.models.db import SessionLocal
+from backend.models.compute import VirtualMachine
+from backend.schemas.admin import (
     AdminUserInfo,
     AdminSoftDeleteUserResponse,
     AdminServerInfo,
@@ -14,7 +14,7 @@ from schemas.admin import (
     AdminServerCreatedResponse,
     AdminDisabledServerSearchResult,
 )
-from sevices import admin as admin_service
+from backend.services import admin as admin_service
 
 
 router = APIRouter(prefix="/admin", tags=["admin"])
