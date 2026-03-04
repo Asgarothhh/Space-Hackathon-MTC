@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from backend.models.projects import Project
 from uuid import UUID
+from backend.services.orchestrator import enqueue_job, run_job_create_project, _mark_job_failed, _mark_job_success
+
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +21,10 @@ def _validate_quotas(cpu: int, ram: int, ssd: int):
     if ssd > MAX_SSD_PER_PROJECT:
         raise ValueError(f"ssd_quota exceeds maximum {MAX_SSD_PER_PROJECT}")
 
+
 def create_project(db: Session, owner_id: UUID, name: str, cpu_quota: int, ram_quota: int, ssd_quota: int) -> Project:
     _validate_quotas(cpu_quota, ram_quota, ssd_quota)
 
-    # Идемпотентность: если проект с таким именем у пользователя уже есть — вернуть его
     existing = db.query(Project).filter(Project.owner_id == owner_id, Project.name == name).first()
     if existing:
         return existing
@@ -33,7 +35,6 @@ def create_project(db: Session, owner_id: UUID, name: str, cpu_quota: int, ram_q
         db.commit()
         db.refresh(project)
         logger.info("Created project %s for user %s", project.id, owner_id)
-        return project
     except IntegrityError:
         db.rollback()
         existing = db.query(Project).filter(Project.owner_id == owner_id, Project.name == name).first()
@@ -43,3 +44,14 @@ def create_project(db: Session, owner_id: UUID, name: str, cpu_quota: int, ram_q
     except Exception:
         db.rollback()
         raise
+
+    # --- orchestration: enqueue and try to run post-create job immediately ---
+    try:
+        # enqueue_job уже вызывается внутри run_job_create_project, но можно явно создать намерение:
+        run_job_create_project(db, project)
+    except Exception:
+        # Если немедленное выполнение упало — задача уже создана или будет создана worker'ом.
+        logger.exception("Immediate run_job_create_project failed for project %s", project.id)
+
+    return project
+
