@@ -1,7 +1,9 @@
 import uuid
-from sqlalchemy import Column, String, Integer, TIMESTAMP, ForeignKey, text
-from sqlalchemy.dialects.postgresql import UUID
-from .db import Base
+
+from sqlalchemy import Column, String, Integer, UUID, TIMESTAMP, text, ForeignKey
+
+from backend.models.db import Base
+
 
 class VirtualMachine(Base):
     __tablename__ = "virtual_machines"

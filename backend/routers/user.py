@@ -45,13 +45,31 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     return TokenResponse(access_token=token)
 
 
+import logging
+
+logger = logging.getLogger("app.debug")
+
 @router.post("/create_server", response_model=UserServerBase, status_code=status.HTTP_201_CREATED)
 def create_server_endpoint(payload: UserServerCreate, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+    logger.info("create_server_endpoint called by user=%s project_id=%r payload=%s", current_user.id, payload.project_id, payload.dict())
+    # Диагностическая проверка наличия проекта и владельца (временно)
+    from backend.models.projects import Project  # локальный импорт, чтобы не ломать импорты модуля
+    project = db.query(Project).filter(Project.id == payload.project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail=f"Project {payload.project_id} not found")
+    if project.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail=f"Project owner mismatch: project.owner_id={project.owner_id}, current_user.id={current_user.id}")
+
     try:
         vm = create_server(db, owner_id=current_user.id, name=payload.name, project_id=payload.project_id, cpu=payload.cpu, ram=payload.ram, ssd=payload.ssd)
     except ValueError as e:
+        logger.info("create_server returned ValueError: %s", e)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        logger.exception("Unexpected error in create_server_endpoint: %s", e)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
     return UserServerBase.from_orm(vm)
+
 
 @router.patch("/update_server", response_model=UserServerBase)
 def update_server_endpoint(payload: UserServerUpdate, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
