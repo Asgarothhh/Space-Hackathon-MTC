@@ -17,6 +17,7 @@ from backend.services.orchestrator import (
     _mark_job_success,
 )
 from backend.services.network import allocate_ip_for_vm, release_ips_for_vm
+from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +89,11 @@ def find_and_reserve_project_for_vm(db: Session, user_id: uuid.UUID, cpu: int, r
     return proj_locked
 
 
-def _create_vm_in_tx(db: Session, owner_id: uuid.UUID, name: str, cpu: int, ram: int, ssd: int) -> VirtualMachine:
+def _create_vm_in_tx(db: Session, owner_id: uuid.UUID, name: str, cpu: int, ram: int, ssd: int, network_speed: Optional[int] = None) -> VirtualMachine:
+    """
+    Создаёт запись VM внутри транзакции и пытается выделить IP.
+    network_speed — необязательный параметр (int).
+    """
     project = find_and_reserve_project_for_vm(db, owner_id, cpu, ram, ssd)
     if project is None:
         raise ValueError("No suitable project found")
@@ -100,6 +105,7 @@ def _create_vm_in_tx(db: Session, owner_id: uuid.UUID, name: str, cpu: int, ram:
         cpu=cpu,
         ram=ram,
         ssd=ssd,
+        network_speed=network_speed,
         status="CREATING",
         docker_container_id=None,
     )
@@ -122,12 +128,15 @@ def _create_vm_in_tx(db: Session, owner_id: uuid.UUID, name: str, cpu: int, ram:
     return vm
 
 
-def create_server(db: Session, owner_id: uuid.UUID, name: str, cpu: int, ram: int, ssd: int) -> VirtualMachine:
+def create_server(db: Session, owner_id: uuid.UUID, name: str, cpu: int, ram: int, ssd: int, network_speed: Optional[int] = None) -> VirtualMachine:
+    """
+    Создать VM для пользователя. network_speed передаётся и сохраняется в VM.
+    """
     vm = None
     project = None
     try:
         if getattr(db, "in_transaction", None) and db.in_transaction():
-            vm = _create_vm_in_tx(db, owner_id, name, cpu, ram, ssd)
+            vm = _create_vm_in_tx(db, owner_id, name, cpu, ram, ssd, network_speed)
             project = db.query(Project).filter(Project.id == vm.project_id).one_or_none()
             # Если сессия уже была в транзакции, явно зафиксируем изменения,
             # чтобы воркер/другая сессия увидели network_ipv4/6 и IP allocations.
@@ -139,7 +148,7 @@ def create_server(db: Session, owner_id: uuid.UUID, name: str, cpu: int, ram: in
                 raise
         else:
             with db.begin():
-                vm = _create_vm_in_tx(db, owner_id, name, cpu, ram, ssd)
+                vm = _create_vm_in_tx(db, owner_id, name, cpu, ram, ssd, network_speed)
                 project = db.query(Project).filter(Project.id == vm.project_id).one_or_none()
             # with db.begin() уже сделал commit
 
@@ -207,19 +216,31 @@ def delete_server(db: Session, owner_id, server_id) -> bool:
         return True
 
 
-def update_server(db: Session, owner_id: uuid.UUID, server_id: uuid.UUID, cpu: int, ram: int, ssd: int) -> Optional[VirtualMachine]:
+from typing import Optional
+from uuid import UUID
+
+def update_server(db: Session, owner_id: UUID, server_id: UUID,
+                  cpu: Optional[int] = None, ram: Optional[int] = None,
+                  ssd: Optional[int] = None, network_speed: Optional[int] = None) -> Optional[VirtualMachine]:
     vm = db.query(VirtualMachine).join(Project, VirtualMachine.project_id == Project.id)\
         .filter(VirtualMachine.id == server_id, Project.owner_id == owner_id).first()
     if not vm:
         return None
 
-    vm.cpu = cpu
-    vm.ram = ram
-    vm.ssd = ssd
+    if cpu is not None:
+        vm.cpu = cpu
+    if ram is not None:
+        vm.ram = ram
+    if ssd is not None:
+        vm.ssd = ssd
+    if network_speed is not None:
+        vm.network_speed = network_speed
+
     db.add(vm)
     db.commit()
     db.refresh(vm)
     return vm
+
 
 
 def start_server(db: Session, owner_id: uuid.UUID, server_id: uuid.UUID) -> Optional[VirtualMachine]:
@@ -289,3 +310,14 @@ def rename_server(db: Session, owner_id: uuid.UUID, server_id: uuid.UUID, new_na
     db.commit()
     db.refresh(vm)
     return vm
+
+
+# (в начале файла уже должны быть импорты Session, VirtualMachine, Project и т.д.)
+
+def get_vm_by_id(db: Session, owner_id: UUID, server_id: UUID) -> Optional[VirtualMachine]:
+    """
+    Вернуть VM если она принадлежит owner_id (проверка через Project.owner_id).
+    Возвращает объект VirtualMachine или None.
+    """
+    return db.query(VirtualMachine).join(Project, VirtualMachine.project_id == Project.id) \
+        .filter(VirtualMachine.id == server_id, Project.owner_id == owner_id).first()

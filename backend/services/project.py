@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
 from backend.models.projects import Project
+from backend.models.network import Network
 from backend.services.orchestrator import (
     enqueue_job,
     run_job_create_project,
@@ -22,6 +23,11 @@ logger = logging.getLogger(__name__)
 MAX_CPU_PER_PROJECT = 1000
 MAX_RAM_PER_PROJECT = 1024 * 1024  # MB
 MAX_SSD_PER_PROJECT = 10000  # GB
+
+# Дефолтный CIDR для автоматически создаваемой сети (dev / тест)
+DEFAULT_PROJECT_NETWORK_CIDR = "10.10.0.0/24"
+DEFAULT_PROJECT_NETWORK_NAME = "default"
+
 
 def _validate_quotas(cpu: int, ram: int, ssd: int):
     if cpu > MAX_CPU_PER_PROJECT:
@@ -54,6 +60,29 @@ def create_project(db: Session, owner_id: Optional[UUID], name: str, cpu_quota: 
     except Exception:
         db.rollback()
         raise
+
+    # Создать дефолтную сеть для проекта (dev-поведение).
+    # Ошибки при создании сети логируем, но не откатываем создание проекта.
+    try:
+        default_net = Network(
+            id=uuid.uuid4(),
+            name=DEFAULT_PROJECT_NETWORK_NAME,
+            project_id=project.id,
+            cidr=DEFAULT_PROJECT_NETWORK_CIDR
+        )
+        db.add(default_net)
+        db.commit()
+        logger.info("Created default network %s for project %s (cidr=%s)", default_net.id, project.id, DEFAULT_PROJECT_NETWORK_CIDR)
+    except IntegrityError:
+        db.rollback()
+        # Если сеть с таким именем/ид уже существует — просто логируем и продолжаем
+        logger.warning("Default network creation conflict for project %s; skipping creation", project.id)
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        logger.exception("Failed to create default network for project %s", project.id)
 
     try:
         run_job_create_project(db, project)
