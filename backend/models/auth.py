@@ -3,6 +3,7 @@ from sqlalchemy import Column, String, Boolean, TIMESTAMP, text
 from sqlalchemy.dialects.postgresql import UUID
 from .db import Base
 
+
 class User(Base):
     __tablename__ = "users"
     __table_args__ = {"schema": "auth_service"}

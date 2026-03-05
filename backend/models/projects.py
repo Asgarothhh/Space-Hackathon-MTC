@@ -5,12 +5,14 @@ from sqlalchemy import Column, String, Integer, TIMESTAMP, ForeignKey, text, Boo
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from backend.models.db import Base
 
+
 class ProjectStatus(enum.Enum):
     CREATING = "CREATING"
     ACTIVE = "ACTIVE"
     INACTIVE = "INACTIVE"
     DELETING = "DELETING"
     ERROR = "ERROR"
+
 
 class Project(Base):
     __tablename__ = "projects"

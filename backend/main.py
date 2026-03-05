@@ -7,6 +7,7 @@ import backend.models.orchestrator  # noqa: F401
 from backend.routers import admin as admin_router
 from backend.routers import user as user_router
 from backend.routers import projects as projects_router
+from backend.routers import agent
 from sqlalchemy import text
 from backend.models.db import engine, Base
 from backend.routers.vm import router as vm_router
@@ -38,6 +39,7 @@ app.include_router(vm_router)
 app.include_router(admin_router.router)
 app.include_router(user_router.router)
 app.include_router(projects_router.router)
+app.include_router(agent.router)
 
 
 @app.get("/")
