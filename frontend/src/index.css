@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+
+main{
+  background-color: black;
+  height: 1000px;
+}
+
+#main-title{
+  color: aliceblue;
+}
+
+@layer base {
+  html {
+    /* Подключаем шрифт (убедись, что Inter установлен в системе или проекте) */
+    font-family: 'Inter', sans-serif;
+  }
+
+}
