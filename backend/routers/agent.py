@@ -214,7 +214,7 @@ async def file_loader(
 
 @router.post("/ask")
 async def ask(
-    user_message: Annotated[str, Form(...)],
+    user_message: str = Form(default=""),
     expected_load: Annotated[
         Literal["low", "medium", "high", "production"],
         Form(),

@@ -1,9 +1,11 @@
 # backend/schemas/user.py
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict
 from uuid import UUID
 from typing import Optional, List
 
 class LoginRequest(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     email: str
     password: str
 
@@ -13,11 +15,13 @@ class TokenResponse(BaseModel):
 
 class UserServerCreate(BaseModel):
     name: str
-    cpu: int
-    ram: int
-    ssd: int
+    cpu: int = Field(..., ge=1, le=2147483647)
+    ram: int = Field(..., ge=1, le=2147483647)
+    ssd: int = Field(..., ge=1, le=2147483647)
 
 class UserServerBase(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     name: str
     project_id: UUID
@@ -26,9 +30,6 @@ class UserServerBase(BaseModel):
     ssd: int
     status: str
     docker_container_id: Optional[str] = None
-
-    class Config:
-        from_attributes = True
 
 class UserServerUpdate(BaseModel):
     server_id: UUID

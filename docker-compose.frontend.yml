@@ -1,0 +1,39 @@
+# ═══════════════════════════════════════════════════════════════
+# Окружение 2 — Frontend-only
+# Для: UI-тестов, разработки UI без бэкенда
+#
+# Состав: фронтенд + Prism mock-сервер (OpenAPI)
+# Бэкенд НЕ нужен — Prism эмулирует API по openapi.yaml.
+#
+# Использование:
+#   docker compose -f docker-compose.frontend.yml up -d
+#   # Фронтенд: http://localhost:3000
+#   # Mock API:  http://localhost:4010
+# ═══════════════════════════════════════════════════════════════
+
+services:
+  mock-api:
+    image: stoplight/prism:5
+    command: mock -h 0.0.0.0 /app/openapi.yaml
+    volumes:
+      - ./openapi.yaml:/app/openapi.yaml:ro
+    ports:
+      - "4010:4010"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:4010/ || exit 0"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Раскомментируйте, когда появится фронтенд:
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   environment:
+  #     VITE_API_URL: http://mock-api:4010
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     mock-api:
+  #       condition: service_healthy

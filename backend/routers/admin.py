@@ -158,9 +158,13 @@ def admin_add_server(
             ssd=payload.ssd,
         )
     except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        detail = str(e)
+        status_code = (
+            status.HTTP_404_NOT_FOUND
+            if "Project not found or user does not own it" in detail
+            else status.HTTP_400_BAD_REQUEST
         )
+        raise HTTPException(status_code=status_code, detail=detail)
     return vm
 
 

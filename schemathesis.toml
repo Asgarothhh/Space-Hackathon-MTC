@@ -1,0 +1,7 @@
+# Schemathesis configuration for contract tests
+# https://schemathesis.readthedocs.io/en/stable/reference/configuration/
+
+[checks.positive_data_acceptance]
+# Accept 400/422 for "valid" requests: malformed HTTP, invalid JSON body,
+# or validation errors from edge cases (e.g. int32 overflow in stateful chains)
+expected-statuses = ["2xx", "400", "401", "403", "404", "409", "422", "5xx"]

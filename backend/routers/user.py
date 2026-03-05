@@ -19,7 +19,8 @@ def register(payload: UserRegisterRequest, db: Session = Depends(get_db)):
     try:
         user = register_user(db, email=payload.email, password=payload.password)
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        # Uniqueness / business-rule violations should be treated as conflict.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     return UserResponse.from_orm(user)
 
 

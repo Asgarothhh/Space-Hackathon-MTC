@@ -1,0 +1,105 @@
+# ═══════════════════════════════════════════════════════════════
+# Окружение 3 — Full-stack
+# Для: E2E-тестов, сценарных тестов, тестирования жизненного цикла VM
+#
+# Состав: фронтенд + реальный бэкенд + PostgreSQL + Redis + Docker
+#
+# Использование:
+#   docker compose -f docker-compose.fullstack.yml up -d
+#   docker compose -f docker-compose.fullstack.yml --profile e2e run --rm e2e-tests
+# ═══════════════════════════════════════════════════════════════
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mts_user
+      POSTGRES_PASSWORD: mts_password
+      POSTGRES_DB: mts
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata_fullstack:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mts_user -d mts"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    environment:
+      POSTGRES_USER: mts_user
+      POSTGRES_PASSWORD: mts_password
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: mts
+      JWT_SECRET: ${JWT_SECRET:-production-secret}
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
+
+  # Раскомментируйте, когда появится фронтенд:
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   environment:
+  #     VITE_API_URL: http://backend:8000
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     - backend
+
+  # E2E-тесты (Playwright)
+  e2e-tests:
+    image: mcr.microsoft.com/playwright:v1.49.0-noble
+    working_dir: /app
+    volumes:
+      - ./tests/e2e:/app
+    environment:
+      BASE_URL: http://backend:8000
+      # FRONTEND_URL: http://frontend:3000
+    command: npx playwright test
+    depends_on:
+      - backend
+    profiles:
+      - e2e
+
+  # Контрактные тесты против реального бэкенда
+  contract-tests:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: >
+      schemathesis run
+        /app/openapi.yaml
+        --url http://backend:8000
+        --checks all
+    depends_on:
+      - backend
+    profiles:
+      - contract
+
+volumes:
+  pgdata_fullstack:

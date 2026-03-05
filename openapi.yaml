@@ -1,0 +1,1763 @@
+openapi: "3.1.0"
+info:
+  title: MTS IaaS Cloud
+  description: |
+    Управление виртуальными машинами, проектами, пользователями и сетями
+    на платформе MTS IaaS Cloud. Этот файл — единый источник истины (source of truth)
+    для бэкенда и фронтенда.
+  version: "1.0.0"
+  contact:
+    name: MTS IaaS Team
+
+servers:
+  - url: http://localhost:8000
+    description: Local dev
+  - url: http://localhost:4010
+    description: Prism mock server
+
+tags:
+  - name: user
+    description: Регистрация и аутентификация
+  - name: vm
+    description: Управление виртуальными машинами
+  - name: projects
+    description: Управление проектами (admin)
+  - name: admin
+    description: Административные операции
+  - name: agent
+    description: AI-агент и загрузка файлов
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Uuid:
+      type: string
+      format: uuid
+      example: "550e8400-e29b-41d4-a716-446655440000"
+
+    # ── Ошибки ──────────────────────────────────────
+    ErrorResponse:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: string
+      example:
+        detail: "Resource not found"
+
+    ValidationError:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
+            properties:
+              loc:
+                type: array
+                items:
+                  oneOf:
+                    - type: string
+                    - type: integer
+              msg:
+                type: string
+              type:
+                type: string
+
+    # ── Auth / User ─────────────────────────────────
+    UserRegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: "user@example.com"
+        password:
+          type: string
+          minLength: 1
+          example: "strongpassword123"
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          example: "user@example.com"
+        password:
+          type: string
+          example: "strongpassword123"
+
+    UserResponse:
+      type: object
+      required: [id, email, role, is_active]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        email:
+          type: string
+          format: email
+          example: "user@example.com"
+        role:
+          type: string
+          enum: [user, admin]
+          example: "user"
+        is_active:
+          type: boolean
+          example: true
+
+    TokenResponse:
+      type: object
+      required: [access_token, token_type]
+      properties:
+        access_token:
+          type: string
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        token_type:
+          type: string
+          default: bearer
+          example: "bearer"
+
+    AdminUserInfo:
+      allOf:
+        - $ref: "#/components/schemas/UserResponse"
+        - type: object
+          required: [created_at]
+          properties:
+            created_at:
+              type: string
+              format: date-time
+
+    # ── VM ──────────────────────────────────────────
+    VMStatus:
+      type: string
+      enum:
+        - CREATING
+        - RUNNING
+        - STOPPED
+        - DELETING
+        - DISABLED
+        - ERROR
+
+    VMCreate:
+      type: object
+      required: [name, cpu, ram, ssd]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          example: "my-vm-01"
+        cpu:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          example: 2
+        ram:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: "RAM в МБ"
+          example: 4096
+        ssd:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: "SSD в ГБ"
+          example: 50
+        network_speed:
+          type: integer
+          format: int32
+          nullable: true
+          description: "Скорость сети в Мбит/с"
+          maximum: 2147483647
+          example: 100
+
+    VMUpdate:
+      type: object
+      required: [cpu, ram, ssd]
+      properties:
+        cpu:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          example: 4
+        ram:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          example: 8192
+        ssd:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          example: 100
+        network_speed:
+          type: integer
+          format: int32
+          nullable: true
+          maximum: 2147483647
+          example: 200
+
+    VMResponse:
+      type: object
+      required: [id, name, project_id, cpu, ram, ssd, status, is_gateway]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        project_id:
+          type: string
+          format: uuid
+        owner_id:
+          type: string
+          format: uuid
+          nullable: true
+        cpu:
+          type: integer
+        ram:
+          type: integer
+        ssd:
+          type: integer
+        network_speed:
+          type: integer
+          nullable: true
+        network_ipv4:
+          type: string
+          nullable: true
+        network_ipv6:
+          type: string
+          nullable: true
+        status:
+          $ref: "#/components/schemas/VMStatus"
+        docker_container_id:
+          type: string
+          nullable: true
+        ssh_link:
+          type: string
+          nullable: true
+        is_gateway:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+      example:
+        id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        name: "my-vm-01"
+        project_id: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+        owner_id: "550e8400-e29b-41d4-a716-446655440000"
+        cpu: 2
+        ram: 4096
+        ssd: 50
+        network_speed: 100
+        network_ipv4: "10.0.0.5"
+        network_ipv6: null
+        status: "RUNNING"
+        docker_container_id: "abc123def456"
+        ssh_link: "ssh://user@10.0.0.5"
+        is_gateway: false
+        created_at: "2026-01-15T12:00:00Z"
+
+    # ── Project ─────────────────────────────────────
+    ProjectStatus:
+      type: string
+      enum:
+        - CREATING
+        - ACTIVE
+        - INACTIVE
+        - DELETING
+        - ERROR
+
+    ProjectCreateRequest:
+      type: object
+      required: [name, cpu_quota, ram_quota, ssd_quota]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          example: "production-project"
+        cpu_quota:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          example: 8
+        ram_quota:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          example: 16384
+        ssd_quota:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          example: 100
+
+    ProjectUpdateRequest:
+      type: object
+      required: [cpu_quota, ram_quota, ssd_quota]
+      properties:
+        cpu_quota:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+        ram_quota:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+        ssd_quota:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+
+    ProjectResponse:
+      type: object
+      required: [id, name, cpu_quota, ram_quota, ssd_quota, cpu_used, ram_used, ssd_used, is_allocated, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        owner_id:
+          type: string
+          format: uuid
+          nullable: true
+        cpu_quota:
+          type: integer
+        ram_quota:
+          type: integer
+        ssd_quota:
+          type: integer
+        cpu_used:
+          type: integer
+        ram_used:
+          type: integer
+        ssd_used:
+          type: integer
+        is_allocated:
+          type: boolean
+        status:
+          $ref: "#/components/schemas/ProjectStatus"
+      example:
+        id: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+        name: "production-project"
+        owner_id: "550e8400-e29b-41d4-a716-446655440000"
+        cpu_quota: 8
+        ram_quota: 16384
+        ssd_quota: 100
+        cpu_used: 2
+        ram_used: 4096
+        ssd_used: 50
+        is_allocated: true
+        status: "ACTIVE"
+
+    ProjectActionResponse:
+      type: object
+      required: [job_id, status]
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+      example:
+        job_id: "c3d4e5f6-a7b8-9012-cdef-123456789012"
+        status: "pending"
+
+    # ── Admin schemas ───────────────────────────────
+    AdminProjectCreateRequest:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          example: "admin-project"
+        cpu_quota:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          default: 8
+        ram_quota:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          default: 16384
+        ssd_quota:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          default: 100
+
+    AdminProjectResponse:
+      allOf:
+        - $ref: "#/components/schemas/ProjectResponse"
+        - type: object
+          required: [created_at]
+          properties:
+            status:
+              type: string
+            created_at:
+              type: string
+              format: date-time
+
+    AdminVMCreateRequest:
+      type: object
+      required: [name, cpu, ram, ssd, project_id]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          example: "admin-vm-01"
+        cpu:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          example: 4
+        ram:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          example: 8192
+        ssd:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          example: 100
+        project_id:
+          type: string
+          format: uuid
+
+    AdminVMResponse:
+      type: object
+      required: [id, name, project_id, cpu, ram, ssd, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        project_id:
+          type: string
+          format: uuid
+        cpu:
+          type: integer
+        ram:
+          type: integer
+        ssd:
+          type: integer
+        status:
+          type: string
+        docker_container_id:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    AdminVMInfoResponse:
+      allOf:
+        - $ref: "#/components/schemas/AdminVMResponse"
+        - type: object
+          properties:
+            cpu_usage_percent:
+              type: number
+              format: float
+              default: 0.0
+            ram_usage_percent:
+              type: number
+              format: float
+              default: 0.0
+            ssd_usage_percent:
+              type: number
+              format: float
+              default: 0.0
+            network_in_bytes:
+              type: integer
+              default: 0
+            network_out_bytes:
+              type: integer
+              default: 0
+
+    AdminServersListResponse:
+      type: object
+      required: [servers]
+      properties:
+        servers:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminVMResponse"
+
+    AdminProjectsListResponse:
+      type: object
+      required: [projects]
+      properties:
+        projects:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminProjectResponse"
+
+    # ── Job ─────────────────────────────────────────
+    JobResponse:
+      type: object
+      required: [id, resource_type, action, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        resource_type:
+          type: string
+          enum: [vm, project]
+        resource_id:
+          type: string
+          format: uuid
+          nullable: true
+        action:
+          type: string
+          enum: [create, delete, start, stop, create_ssh]
+        status:
+          type: string
+          enum: [pending, running, done, failed]
+        error_message:
+          type: string
+          nullable: true
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    # ── Network ─────────────────────────────────────
+    NetworkResponse:
+      type: object
+      required: [id, name, project_id, cidr]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        project_id:
+          type: string
+          format: uuid
+        cidr:
+          type: string
+          example: "10.0.0.0/24"
+        created_at:
+          type: string
+          format: date-time
+
+    IPAllocationResponse:
+      type: object
+      required: [id, network_id, vm_id, ip_address]
+      properties:
+        id:
+          type: string
+          format: uuid
+        network_id:
+          type: string
+          format: uuid
+        vm_id:
+          type: string
+          format: uuid
+        ip_address:
+          type: string
+          example: "10.0.0.5"
+        allocated_at:
+          type: string
+          format: date-time
+
+    # ── Agent ───────────────────────────────────────
+    FileLoaderResponse:
+      type: object
+      required: [project_root, status, mode]
+      properties:
+        project_root:
+          type: string
+        status:
+          type: string
+          enum: [uploaded]
+        mode:
+          type: string
+          enum: [archive, file]
+        filename:
+          type: string
+          nullable: true
+
+    AskResponse:
+      type: object
+      required: [response, docker_created]
+      properties:
+        response:
+          type: string
+        specs:
+          type: object
+          nullable: true
+        docker_created:
+          type: boolean
+        project_root_used:
+          type: string
+          nullable: true
+
+    HealthResponse:
+      type: object
+      required: [status, graph_loaded]
+      properties:
+        status:
+          type: string
+          example: "ok"
+        graph_loaded:
+          type: boolean
+
+    # ── User search ─────────────────────────────────
+    UserSearchVMItem:
+      type: object
+      properties:
+        vm_id:
+          type: string
+          format: uuid
+        vm_name:
+          type: string
+        status:
+          type: string
+        cpu:
+          type: integer
+        ram:
+          type: integer
+        ssd:
+          type: integer
+        ssh_link:
+          type: string
+          nullable: true
+        project_id:
+          type: string
+          format: uuid
+        project_name:
+          type: string
+
+    # ── SSH ──────────────────────────────────────────
+    SSHEnqueueResponse:
+      type: object
+      required: [job_id, message]
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        message:
+          type: string
+          example: "SSH creation enqueued"
+
+  responses:
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            detail: "Resource not found"
+    Unauthorized:
+      description: Not authenticated
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            detail: "Not authenticated"
+    Forbidden:
+      description: Admin only
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            detail: "Admin only"
+    BadRequest:
+      description: Invalid input (malformed HTTP, body parse error, etc.)
+      content:
+        text/plain:
+          schema:
+            type: string
+          example: "Invalid HTTP request received."
+        text/plain; charset=utf-8:
+          schema:
+            type: string
+          example: "Invalid HTTP request received."
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    Conflict:
+      description: Conflict
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ValidationError"
+
+paths:
+  # ═══════════════════════════════════════════════════
+  #  Root
+  # ═══════════════════════════════════════════════════
+  /:
+    get:
+      operationId: root
+      summary: Health check root
+      tags: [user]
+      responses:
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "200":
+          description: API is running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+              example:
+                status: "IaaS control-plane is running"
+
+  # ═══════════════════════════════════════════════════
+  #  User
+  # ═══════════════════════════════════════════════════
+  /user/register:
+    post:
+      operationId: registerUser
+      summary: Регистрация пользователя
+      tags: [user]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserRegisterRequest"
+      responses:
+        "201":
+          description: Пользователь зарегистрирован
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /user/login:
+    post:
+      operationId: loginUser
+      summary: Аутентификация пользователя
+      tags: [user]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Успешный вход
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /user/search_projects:
+    get:
+      operationId: searchUserProjects
+      summary: Поиск VM в активных проектах
+      tags: [user]
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Список VM
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserSearchVMItem"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  # ═══════════════════════════════════════════════════
+  #  VM
+  # ═══════════════════════════════════════════════════
+  /vm/:
+    post:
+      operationId: createVM
+      summary: Создать VM
+      tags: [vm]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VMCreate"
+      responses:
+        "201":
+          description: VM создана
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VMResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /vm/{server_id}:
+    get:
+      operationId: getVM
+      summary: Получить VM по ID
+      tags: [vm]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: server_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Uuid"
+      responses:
+        "200":
+          description: VM
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VMResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+    patch:
+      operationId: updateVM
+      summary: Обновить VM
+      tags: [vm]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: server_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Uuid"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VMUpdate"
+      responses:
+        "200":
+          description: VM обновлена
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VMResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+    delete:
+      operationId: deleteVM
+      summary: Удалить VM
+      tags: [vm]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: server_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Uuid"
+      responses:
+        "204":
+          description: VM удалена
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /vm/{server_id}/start:
+    post:
+      operationId: startVM
+      summary: Запустить VM
+      tags: [vm]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: server_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Uuid"
+      responses:
+        "200":
+          description: VM запущена
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VMResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /vm/{server_id}/stop:
+    post:
+      operationId: stopVM
+      summary: Остановить VM
+      tags: [vm]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: server_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Uuid"
+      responses:
+        "200":
+          description: VM остановлена
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VMResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /vm/{server_id}/ssh:
+    post:
+      operationId: createSSH
+      summary: Создать SSH-ссылку для VM
+      tags: [vm]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: server_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Uuid"
+      responses:
+        "202":
+          description: SSH creation enqueued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SSHEnqueueResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ═══════════════════════════════════════════════════
+  #  Projects
+  # ═══════════════════════════════════════════════════
+  /projects:
+    post:
+      operationId: createProject
+      summary: Создать проект (admin)
+      tags: [projects]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectCreateRequest"
+      responses:
+        "201":
+          description: Проект создан
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+    get:
+      operationId: listProjects
+      summary: Список проектов (admin)
+      tags: [projects]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Фильтр по имени проекта (ILIKE)
+      responses:
+        "200":
+          description: Список проектов
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /projects/{project_id}/start:
+    post:
+      operationId: startProject
+      summary: Запустить проект
+      tags: [projects]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Uuid"
+      responses:
+        "202":
+          description: Job enqueued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectActionResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /projects/{project_id}/stop:
+    post:
+      operationId: stopProject
+      summary: Остановить проект
+      tags: [projects]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Uuid"
+      responses:
+        "202":
+          description: Job enqueued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectActionResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /projects/{project_id}:
+    patch:
+      operationId: updateProject
+      summary: Обновить квоты проекта
+      tags: [projects]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Uuid"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectUpdateRequest"
+      responses:
+        "200":
+          description: Проект обновлён
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+    delete:
+      operationId: deleteProject
+      summary: Удалить проект
+      tags: [projects]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Uuid"
+      responses:
+        "202":
+          description: Job enqueued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectActionResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  # ═══════════════════════════════════════════════════
+  #  Admin — Projects
+  # ═══════════════════════════════════════════════════
+  /project/admin/add/{user_id}:
+    post:
+      operationId: adminAddProject
+      summary: Создать проект для пользователя
+      tags: [admin]
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Uuid"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminProjectCreateRequest"
+      responses:
+        "201":
+          description: Проект создан
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminProjectResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /project/admin/disable/{project_id}:
+    post:
+      operationId: adminDisableProject
+      summary: Отключить проект
+      tags: [admin]
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Uuid"
+      responses:
+        "200":
+          description: Проект отключён
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminProjectResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /project/admin/active/{project_id}:
+    post:
+      operationId: adminActivateProject
+      summary: Активировать проект
+      tags: [admin]
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Uuid"
+      responses:
+        "200":
+          description: Проект активирован
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminProjectResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /project/admin/delete/{project_id}:
+    delete:
+      operationId: adminDeleteProject
+      summary: Удалить проект (admin)
+      tags: [admin]
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Uuid"
+      responses:
+        "200":
+          description: Проект удалён
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminProjectResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /project/admin/info/{project_id}:
+    get:
+      operationId: adminGetProjectInfo
+      summary: Информация о проекте
+      tags: [admin]
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Uuid"
+      responses:
+        "200":
+          description: Информация о проекте
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminProjectResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /projects/admin/info/{user_id}:
+    get:
+      operationId: adminListProjectsByUser
+      summary: Проекты пользователя
+      tags: [admin]
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Uuid"
+      responses:
+        "200":
+          description: Список проектов пользователя
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminProjectsListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /projects/admin/disabled:
+    get:
+      operationId: adminListDisabledProjects
+      summary: Отключённые проекты
+      tags: [admin]
+      responses:
+        "200":
+          description: Список отключённых проектов
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminProjectsListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  # ═══════════════════════════════════════════════════
+  #  Admin — Servers (VM)
+  # ═══════════════════════════════════════════════════
+  /server/admin/add/{user_id}:
+    post:
+      operationId: adminAddServer
+      summary: Создать VM для пользователя
+      tags: [admin]
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Uuid"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminVMCreateRequest"
+      responses:
+        "201":
+          description: VM создана
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminVMResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /server/admin/disable/{server_id}:
+    post:
+      operationId: adminDisableServer
+      summary: Отключить VM
+      tags: [admin]
+      parameters:
+        - name: server_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Uuid"
+      responses:
+        "200":
+          description: VM отключена
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminVMResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /server/admin/active/{server_id}:
+    post:
+      operationId: adminActivateServer
+      summary: Активировать VM
+      tags: [admin]
+      parameters:
+        - name: server_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Uuid"
+      responses:
+        "200":
+          description: VM активирована
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminVMResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /server/admin/delete/{server_id}:
+    delete:
+      operationId: adminDeleteServer
+      summary: Удалить VM (admin)
+      tags: [admin]
+      parameters:
+        - name: server_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Uuid"
+      responses:
+        "200":
+          description: VM удалена
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminVMResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /server/admin/info/{server_id}:
+    get:
+      operationId: adminGetServerInfo
+      summary: Информация о VM с нагрузкой
+      tags: [admin]
+      parameters:
+        - name: server_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Uuid"
+      responses:
+        "200":
+          description: VM info with load metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminVMInfoResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /servers/admin/disabled:
+    get:
+      operationId: adminListDisabledServers
+      summary: Отключённые серверы
+      tags: [admin]
+      responses:
+        "200":
+          description: Список отключённых серверов
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminServersListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  # ═══════════════════════════════════════════════════
+  #  Admin — Users
+  # ═══════════════════════════════════════════════════
+  /user/admin/disable/{user_id}:
+    post:
+      operationId: adminDisableUser
+      summary: Отключить пользователя
+      tags: [admin]
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Uuid"
+      responses:
+        "200":
+          description: Пользователь отключён
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserInfo"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /user/admin/active/{user_id}:
+    post:
+      operationId: adminActivateUser
+      summary: Активировать пользователя
+      tags: [admin]
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Uuid"
+      responses:
+        "200":
+          description: Пользователь активирован
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserInfo"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /user/admin/delete/{user_id}:
+    delete:
+      operationId: adminDeleteUser
+      summary: Удалить пользователя
+      tags: [admin]
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Uuid"
+      responses:
+        "200":
+          description: Пользователь удалён
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserInfo"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  # ═══════════════════════════════════════════════════
+  #  Admin — Server lists
+  # ═══════════════════════════════════════════════════
+  /servers/admin/info/user/{user_id}:
+    get:
+      operationId: adminListServersByUser
+      summary: VM пользователя
+      tags: [admin]
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Uuid"
+      responses:
+        "200":
+          description: Список VM пользователя
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminServersListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /servers/admin/info/project/{project_id}:
+    get:
+      operationId: adminListServersByProject
+      summary: VM в проекте
+      tags: [admin]
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Uuid"
+      responses:
+        "200":
+          description: Список VM в проекте
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminServersListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  # ═══════════════════════════════════════════════════
+  #  Agent
+  # ═══════════════════════════════════════════════════
+  /file_loader:
+    post:
+      operationId: uploadFile
+      summary: Загрузить файл/архив проекта
+      tags: [agent]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Файл загружен
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileLoaderResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "413":
+          description: Файл слишком большой
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /ask:
+    post:
+      operationId: askAgent
+      summary: Задать вопрос AI-агенту
+      tags: [agent]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: []
+              properties:
+                user_message:
+                  type: string
+                expected_load:
+                  type: string
+                  enum: [low, medium, high, production]
+                  default: medium
+                project_root:
+                  type: string
+                  nullable: true
+      responses:
+        "200":
+          description: Ответ агента
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AskResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          description: Agent execution error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Проверка здоровья агента
+      tags: [agent]
+      responses:
+        "200":
+          description: Статус здоровья
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"

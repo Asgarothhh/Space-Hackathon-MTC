@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.models.auth import User
 from backend.models.compute import VirtualMachine
-from backend.models.projects import Project
+from backend.models.projects import Project, ProjectStatus
 from backend.services.orchestrator import (
     enqueue_job,
     run_job_create_vm,
@@ -103,7 +103,7 @@ def admin_create_project(
         cpu_quota=cpu_quota,
         ram_quota=ram_quota,
         ssd_quota=ssd_quota,
-        status="active",
+        status=ProjectStatus.ACTIVE,
     )
     db.add(project)
     db.commit()
@@ -123,10 +123,15 @@ def admin_change_project_status(
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         return None
+    status_map = {
+        "disabled": ProjectStatus.INACTIVE,
+        "active": ProjectStatus.ACTIVE,
+    }
+    mapped_status = status_map.get(new_status, new_status)
     action = "DISABLE_PROJECT" if new_status == "disabled" else "ACTIVATE_PROJECT"
     job = enqueue_job(db, "PROJECT", project.id, action)
     try:
-        project.status = new_status
+        project.status = mapped_status
         db.add(project)
         db.commit()
         db.refresh(project)
@@ -149,6 +154,10 @@ def admin_delete_project(db: Session, project_id: UUID) -> dict | None:
         "cpu_quota": project.cpu_quota,
         "ram_quota": project.ram_quota,
         "ssd_quota": project.ssd_quota,
+        "cpu_used": project.cpu_used,
+        "ram_used": project.ram_used,
+        "ssd_used": project.ssd_used,
+        "is_allocated": project.is_allocated,
         "status": project.status,
         "created_at": project.created_at,
     }
@@ -179,7 +188,7 @@ def admin_list_projects_by_user(
 def admin_list_disabled_projects(db: Session) -> List[Project]:
     return (
         db.query(Project)
-        .filter(Project.status == "disabled")
+        .filter(Project.status == ProjectStatus.INACTIVE)
         .all()
     )
 
