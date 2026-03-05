@@ -30,17 +30,26 @@ llm = ChatOpenAI(
     model="openai/gpt-5.1-codex-mini",
     api_key=os.environ["OPENROUTER_API_KEY"],
     base_url="https://openrouter.ai/api/v1",
-    temperature=30,
+    temperature=0.3,
     max_tokens=2500,
 )
 
 llm_with_tools = llm.bind_tools(tools)
 
-system_prompt = SystemMessage(content=SYSTEM_PROMPT)
-
-
 def agent_node(state: AgentState):
-    messages = [system_prompt] + state["messages"]
+    project_root = state.get("project_root")
+    if project_root:
+        sys_content = (
+            f"{SYSTEM_PROMPT}\n\n"
+            f"Текущий project_root уже задан: {project_root}\n"
+            "Не спрашивай путь к проекту — используй этот. "
+            "Все файловые инструменты (list_files, read_file, analyze_project и т.д.) "
+            "должны использовать этот путь как корень проекта."
+        )
+    else:
+        sys_content = SYSTEM_PROMPT
+
+    messages = [SystemMessage(content=sys_content)] + state["messages"]
     response = llm_with_tools.invoke(messages)
     return {"messages": [response]}
 
