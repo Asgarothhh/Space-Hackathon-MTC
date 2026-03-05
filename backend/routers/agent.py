@@ -161,20 +161,50 @@ async def _save_and_extract(archive_file: UploadFile) -> Path:
 
 @router.post("/file_loader")
 async def file_loader(
-    archive_file: Annotated[
+    file: Annotated[
         UploadFile,
-        File(description="Архив проекта: .zip, .tar, .tar.gz, .tgz, .tar.bz2, .tar.xz, .7z, .rar"),
+        File(description="Архив проекта (.zip, .tar.gz, .7z, .rar) или одиночный файл"),
     ],
 ) -> JSONResponse:
     """
-    Загружает архив проекта, распаковывает и возвращает `project_root`,
-    который затем можно передать в `/ask`.
+    Загружает файл и возвращает `project_root` для `/ask`.
+
+    • Архив (.zip, .tar.gz, .tgz, .tar.bz2, .tar.xz, .tar, .7z, .rar) → распаковывается автоматически
+    • Обычный файл → сохраняется в отдельную папку проекта
     """
-    project_root = await _save_and_extract(archive_file)
+    if file.size and file.size > MAX_ARCHIVE_SIZE_MB * 1024 * 1024:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Файл слишком большой (максимум {MAX_ARCHIVE_SIZE_MB} МБ)",
+        )
+
+    suffix = _archive_suffix(file.filename or "")
+
+    if suffix:
+        project_root = await _save_and_extract(file)
+        return JSONResponse({
+            "project_root": str(project_root),
+            "status": "uploaded",
+            "mode": "archive",
+        })
+
+    project_id = str(uuid.uuid4())
+    project_dir = UPLOAD_ROOT / project_id / "project"
+    project_dir.mkdir(parents=True, exist_ok=True)
+
+    filename = file.filename or f"file_{uuid.uuid4().hex[:8]}"
+    dest = project_dir / filename
+    with dest.open("wb") as f_out:
+        while chunk := await file.read(1024 * 1024):
+            if not chunk:
+                break
+            f_out.write(chunk)
 
     return JSONResponse({
-        "project_root": str(project_root),
+        "project_root": str(project_dir.resolve()),
         "status": "uploaded",
+        "mode": "file",
+        "filename": filename,
     })
 
 
