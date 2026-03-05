@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-DATABASE_URL = r"postgresql://postgres:xdlJ6Xw5KJqj3@localhost:5432/Cloud (IaaS)"
+DATABASE_URL = r"postgresql://postgres:123789963741@localhost:5432/mts"
 
 engine = create_engine(DATABASE_URL, echo=True)
 

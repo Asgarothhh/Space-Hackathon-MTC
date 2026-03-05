@@ -6,10 +6,14 @@ from typing import Optional, List
 class LoginRequest(BaseModel):
     email: str
     password: str
+    totp: Optional[str] = None   # <- опциональный TOTP код для 2FA
 
 class TokenResponse(BaseModel):
-    access_token: str
+    access_token: Optional[str] = None
     token_type: str = "bearer"
+    two_fa_required: Optional[bool] = False
+    two_fa_token: Optional[str] = None
+
 
 class UserServerCreate(BaseModel):
     name: str

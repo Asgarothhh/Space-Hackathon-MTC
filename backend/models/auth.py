@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Boolean, TIMESTAMP, text
+from sqlalchemy import Column, String, Boolean, TIMESTAMP, text, Text
 from sqlalchemy.dialects.postgresql import UUID
 from .db import Base
 
@@ -14,3 +14,5 @@ class User(Base):
     role = Column(String(20), nullable=False, default="user")
     is_active = Column(Boolean, default=True)
     created_at = Column(TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"))
+    two_factor_enabled = Column(Boolean, nullable=False, server_default="false")
+    two_factor_secret = Column(Text, nullable=True)  # храните зашифрованным при необходимости
